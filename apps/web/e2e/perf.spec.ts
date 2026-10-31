@@ -15,9 +15,21 @@ import { expect, test, type Page } from "@playwright/test";
 const results: Record<string, number> = {};
 
 async function navTimings(page: Page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
-    const fcp = performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? NaN;
+    // Headless Chromium on Linux can record the paint entry after `load`; wait for it (buffered)
+    // instead of reading once, which yields NaN on CI.
+    const fcp = await new Promise<number>((resolve) => {
+      const timeout = setTimeout(() => resolve(NaN), 5000);
+      new PerformanceObserver((list, observer) => {
+        const entry = list.getEntriesByName("first-contentful-paint")[0];
+        if (entry) {
+          clearTimeout(timeout);
+          observer.disconnect();
+          resolve(entry.startTime);
+        }
+      }).observe({ type: "paint", buffered: true });
+    });
     return {
       ttfb: nav.responseStart,
       fcp,
