@@ -1,0 +1,29 @@
+# Rust
+target/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+blob-report/
+
+# Python
+.venv/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Benchmark and timing artefacts produced by scripts/
+perf-results/
+
+.DS_Store

@@ -1,0 +1,16 @@
+# Build context is the repo root for web and gateway; keep it small so
+# `docker compose build` doesn't ship gigabytes of local artefacts.
+.git
+**/node_modules
+**/.next
+**/target
+**/.venv
+**/__pycache__
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+**/test-results
+**/playwright-report
+perf-results
+docs
+evals
