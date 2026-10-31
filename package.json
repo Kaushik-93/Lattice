@@ -1,0 +1,19 @@
+{
+  "name": "lattice",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/shared-types"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "npm --workspace @lattice/web run dev",
+    "build": "npm --workspace @lattice/web run build",
+    "lint": "npm --workspace @lattice/web run lint",
+    "typecheck": "npm --workspace @lattice/web run typecheck",
+    "test": "npm --workspace @lattice/web run test",
+    "e2e": "npm --workspace @lattice/web run e2e"
+  }
+}
