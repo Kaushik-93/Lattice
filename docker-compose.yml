@@ -1,0 +1,135 @@
+# Lattice local stack. `docker compose up` → http://localhost:3000 (demo login: demo@lattice.dev / lattice-demo).
+# Every host port can be overridden from .env (see .env.example); Postgres defaults to 5433 on the
+# host so it never collides with a locally installed Postgres on 5432.
+name: lattice
+
+x-healthcheck: &healthcheck
+  interval: 3s
+  timeout: 3s
+  retries: 40
+  start_period: 2s
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Inlined into the client bundle at build time (Next.js NEXT_PUBLIC_* semantics).
+        NEXT_PUBLIC_GATEWAY_URL: ${PUBLIC_GATEWAY_URL:-http://localhost:8080}
+    ports: ["${WEB_PORT:-3000}:3000"]
+    depends_on:
+      gateway: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    # 8090 belongs to the optional dev identity provider (profile "sso"), which runs inside
+    # this container's network namespace; see oidc-dev below.
+    ports: ["${GATEWAY_PORT:-8080}:8080", "${OIDC_DEV_PORT:-8090}:8090"]
+    environment:
+      DATABASE_URL: postgres://lattice:lattice@postgres:5432/lattice
+      REDIS_URL: redis://redis:6379
+      AI_GRPC_URL: http://ai:50051
+      TOOLS_GRPC_ADDR: 0.0.0.0:50052
+      S3_ENDPOINT: http://s3:9000
+      DATA_DIR: /data
+      PUBLIC_URL: ${PUBLIC_GATEWAY_URL:-http://localhost:8080}
+      WEB_ORIGIN: ${PUBLIC_WEB_URL:-http://localhost:3000}
+      # Plain-http localhost: Safari drops Secure cookies on http. Production must leave this true.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      LOG_FORMAT: json
+      RUST_LOG: ${RUST_LOG:-info}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OIDC_PROVIDERS: ${OIDC_PROVIDERS:-}
+      OIDC_GOOGLE_ISSUER: ${OIDC_GOOGLE_ISSUER:-https://accounts.google.com}
+      OIDC_GOOGLE_CLIENT_ID: ${OIDC_GOOGLE_CLIENT_ID:-}
+      OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
+      OIDC_MICROSOFT_ISSUER: ${OIDC_MICROSOFT_ISSUER:-}
+      OIDC_MICROSOFT_CLIENT_ID: ${OIDC_MICROSOFT_CLIENT_ID:-}
+      OIDC_MICROSOFT_CLIENT_SECRET: ${OIDC_MICROSOFT_CLIENT_SECRET:-}
+      OIDC_SSO_ISSUER: ${OIDC_SSO_ISSUER:-}
+      OIDC_SSO_CLIENT_ID: ${OIDC_SSO_CLIENT_ID:-}
+      OIDC_SSO_CLIENT_SECRET: ${OIDC_SSO_CLIENT_SECRET:-}
+    volumes: [gateway_data:/data]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      s3: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "/usr/local/bin/gateway", "healthcheck"]
+
+  ai:
+    build: ./services/ai
+    environment:
+      GATEWAY_TOOLS_URL: http://gateway:50052
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Read-only role; phase 4 grants it SELECT on the embeddings table and nothing else.
+      DATABASE_URL: postgres://lattice_ai_ro:${LATTICE_AI_DB_PASSWORD:-lattice_ai}@postgres:5432/lattice
+    depends_on:
+      gateway: { condition: service_healthy }
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"]
+
+  postgres:
+    build: ./infra/docker/postgres
+    environment:
+      POSTGRES_USER: lattice
+      POSTGRES_PASSWORD: lattice
+      POSTGRES_DB: lattice
+      LATTICE_AI_DB_PASSWORD: ${LATTICE_AI_DB_PASSWORD:-lattice_ai}
+    command: ["postgres", "-c", "shared_preload_libraries=age"]
+    ports: ["${POSTGRES_PORT:-5433}:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql
+      - ./infra/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "lattice", "-d", "lattice"]
+
+  redis:
+    image: redis:7.4.12-alpine
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "redis-cli", "ping"]
+
+  # S3-compatible object storage. The spec named MinIO, but MinIO no longer publishes
+  # container images (docs/adr/0003-version-pins.md); RustFS is a drop-in on the same ports.
+  s3:
+    image: rustfs/rustfs:1.0.3
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-lattice}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-lattice-dev-secret}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+    ports: ["${S3_PORT:-9000}:9000", "${S3_CONSOLE_PORT:-9001}:9001"]
+    volumes: [s3_data:/data]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+
+  # Dev-only OpenID Connect provider for trying SSO locally:
+  #   OIDC_PROVIDERS=sso (plus the OIDC_SSO_* values in .env.example) docker compose --profile sso up
+  # It shares the gateway's network namespace, so http://localhost:8090 is the same issuer URL
+  # for the browser and for the gateway, which the OIDC issuer check requires.
+  oidc-dev:
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.0
+    profiles: ["sso"]
+    network_mode: "service:gateway"
+    environment:
+      SERVER_PORT: "8090"
+    depends_on: [gateway]
+
+volumes:
+  pg_data: {}
+  gateway_data: {}
+  s3_data: {}
