@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package lattice.ai.v1;
+
+// Implemented by the gateway and called only by the AI service. Every piece of data and
+// business logic the AI touches goes through this service, so RBAC, row-level security,
+// approvals and auditing are enforced in exactly one place. Phase 4 adds
+// search_semantic_model, graph_context, get_object, profile_column, run_semantic_query,
+// propose_logic, ask_clarifying_question and emit_visual.
+service GatewayTools {
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+  string request_id = 1;
+}
+
+message PingResponse {
+  string gateway_version = 1;
+  uint64 uptime_s = 2;
+}

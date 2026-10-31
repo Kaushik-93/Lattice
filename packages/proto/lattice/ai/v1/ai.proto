@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package lattice.ai.v1;
+
+// Implemented by the Python AI service and called only by the gateway.
+service AiService {
+  // Answers a natural-language question. Events stream from the first millisecond so the
+  // UI can show progress long before the model has produced anything.
+  rpc Ask(AskRequest) returns (stream AskEvent);
+}
+
+enum ProjectRole {
+  PROJECT_ROLE_UNSPECIFIED = 0;
+  PROJECT_ROLE_VIEWER = 1;
+  PROJECT_ROLE_EDITOR = 2;
+  PROJECT_ROLE_ADMIN = 3;
+}
+
+message AskRequest {
+  string request_id = 1;
+  string workspace_id = 2;
+  string project_id = 3;
+  string user_id = 4;
+  ProjectRole role = 5;
+  string question = 6;
+  string sheet_id = 7;
+  repeated ConversationTurn recent_turns = 8;
+}
+
+message ConversationTurn {
+  enum Speaker {
+    SPEAKER_UNSPECIFIED = 0;
+    SPEAKER_USER = 1;
+    SPEAKER_ASSISTANT = 2;
+  }
+  Speaker speaker = 1;
+  string text = 2;
+}
+
+message AskEvent {
+  string request_id = 1;
+  // Microseconds since the AI service received the request.
+  uint64 elapsed_us = 2;
+  oneof event {
+    Progress progress = 10;
+    Answer answer = 11;
+    Failure failure = 12;
+  }
+}
+
+message Progress {
+  // Machine-readable stage, e.g. "context" or "tool:run_semantic_query".
+  string stage = 1;
+  string message = 2;
+}
+
+// Terminal success event. Phase 4 adds the validated VisualSpec.
+message Answer {
+  string text = 1;
+}
+
+// Terminal failure event.
+message Failure {
+  string code = 1;
+  string message = 2;
+}
