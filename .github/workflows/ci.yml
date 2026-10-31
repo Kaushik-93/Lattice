@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  UV_VERSION: "0.8.19"
+  NODE_VERSION: "24.22.2"
+
+jobs:
+  gateway:
+    name: Gateway (Rust)
+    runs-on: ubuntu-24.04
+    services:
+      # Plain Postgres is enough here: phase 0 tests use neither AGE nor pgvector.
+      postgres:
+        image: postgres:18.6-trixie
+        env:
+          POSTGRES_USER: lattice
+          POSTGRES_PASSWORD: lattice
+          POSTGRES_DB: lattice
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lattice -d lattice"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgres://lattice:lattice@localhost:5432/lattice
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        working-directory: services/gateway
+        run: rustup toolchain install && rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/gateway
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,sqlx-cli
+      - name: Format
+        working-directory: services/gateway
+        run: cargo fmt --all --check
+      - name: Clippy (warnings are errors)
+        working-directory: services/gateway
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Offline query cache matches the schema
+        working-directory: services/gateway
+        run: |
+          sqlx migrate run
+          SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
+      - name: Tests
+        working-directory: services/gateway
+        run: cargo nextest run --workspace
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Generated contracts are up to date
+        run: |
+          ./scripts/gen.sh
+          git diff --exit-code -- packages/shared-types services/ai/src/lattice
+
+  ai:
+    name: AI service (Python)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/ai
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked ruff check .
+      - run: uv run --locked mypy
+      - run: uv run --locked pytest -q
+
+  web:
+    name: Web (TypeScript)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Format
+        run: npm run format:check --workspace @lattice/web
+      - name: Lint
+        run: npm run lint
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+
+  benchmarks:
+    name: Benchmarks (>10% regression fails PRs)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Rust toolchain
+        working-directory: services/gateway
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/gateway
+      # Baseline and candidate run back to back on the same runner, which keeps
+      # machine-to-machine noise out of the comparison.
+      - name: Baseline (target branch)
+        if: github.event_name == 'pull_request'
+        run: |
+          git worktree add ../base "origin/${{ github.base_ref }}"
+          if [ -f ../base/services/gateway/crates/api/benches/router.rs ]; then
+            cd ../base/services/gateway
+            CARGO_TARGET_DIR="$GITHUB_WORKSPACE/services/gateway/target" \
+              cargo bench --workspace --bench '*' -- --save-baseline base
+          fi
+      - name: Candidate
+        working-directory: services/gateway
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -d target/criterion ]; then
+            cargo bench --workspace --bench '*' -- --baseline base
+          else
+            cargo bench --workspace --bench '*'
+          fi
+      - name: Regression gate
+        if: github.event_name == 'pull_request'
+        run: |
+          if find services/gateway/target/criterion -path '*change/estimates.json' | grep -q .; then
+            python3 scripts/bench-gate.py --threshold 0.10
+          else
+            echo "No baseline on the target branch yet; nothing to compare."
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: criterion
+          path: services/gateway/target/criterion
+          if-no-files-found: ignore
+
+  stack:
+    name: Stack (clean docker compose up + e2e + latency budgets)
+    runs-on: ubuntu-24.04
+    needs: [gateway, ai, web]
+    steps:
+      - uses: actions/checkout@v5
+      - name: docker compose up (clean build)
+        run: |
+          start=$(date +%s)
+          docker compose up -d --build --wait
+          echo "compose_up_seconds=$(( $(date +%s) - start ))" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Readiness
+        run: curl -fsS http://localhost:8080/readyz | tee /dev/stderr | grep -q '"status":"ready"'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: E2E and latency budgets
+        run: npm run e2e
+      - name: Gateway latency
+        run: python3 scripts/bench-gateway.py -n 2000
+      - name: Results
+        if: always()
+        run: |
+          {
+            echo '### Phase 0 timings'
+            echo '```json'
+            cat perf-results/*.json 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-and-playwright
+          path: |
+            perf-results
+            apps/web/playwright-report
+            apps/web/test-results
+          if-no-files-found: ignore
+      - name: Service logs
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
