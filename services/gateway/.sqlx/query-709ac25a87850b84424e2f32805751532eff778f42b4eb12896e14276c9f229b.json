@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3)\n         ON CONFLICT (email) DO NOTHING RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "709ac25a87850b84424e2f32805751532eff778f42b4eb12896e14276c9f229b"
+}

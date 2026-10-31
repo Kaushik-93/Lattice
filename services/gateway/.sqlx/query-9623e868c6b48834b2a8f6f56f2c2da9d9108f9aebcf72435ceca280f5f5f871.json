@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT workspace_id FROM workspace_members WHERE user_id = $1 ORDER BY created_at LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9623e868c6b48834b2a8f6f56f2c2da9d9108f9aebcf72435ceca280f5f5f871"
+}

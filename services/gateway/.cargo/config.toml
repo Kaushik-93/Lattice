@@ -1,0 +1,6 @@
+[env]
+# ts-rs writes TypeScript bindings here whenever tests run (`make gen` / CI drift check).
+TS_RS_EXPORT_DIR = { value = "../../packages/shared-types/src/generated", relative = true }
+# Compile sqlx macros against the committed .sqlx/ query cache by default, so building
+# never needs a live database. `make sqlx-prepare` overrides this to refresh the cache.
+SQLX_OFFLINE = "true"

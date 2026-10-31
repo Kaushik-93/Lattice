@@ -1,0 +1,71 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "bin/gateway"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+
+[workspace.dependencies]
+lattice-aibridge = { path = "crates/aibridge" }
+lattice-api = { path = "crates/api" }
+lattice-project = { path = "crates/project" }
+lattice-security = { path = "crates/security" }
+lattice-telemetry = { path = "crates/telemetry" }
+
+anyhow = "1"
+argon2 = "0.5"
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+base64 = "0.22"
+cookie = "0.18"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
+futures-util = "0.3"
+http = "1"
+openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
+opentelemetry = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio"] }
+prost = "0.14"
+prost-build = "0.14"
+protoc-bin-vendored = "3"
+redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate", "uuid", "chrono", "json"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "io-util"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = "0.14"
+tonic-health = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "compression-br", "trace", "timeout", "request-id", "set-header", "util"] }
+tower_governor = "0.8"
+tracing = "0.1"
+tracing-opentelemetry = "0.34"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+ts-rs = { version = "12", features = ["uuid-impl", "chrono-impl", "serde-compat"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# Benchmarks measure what ships.
+[profile.bench]
+inherits = "release"

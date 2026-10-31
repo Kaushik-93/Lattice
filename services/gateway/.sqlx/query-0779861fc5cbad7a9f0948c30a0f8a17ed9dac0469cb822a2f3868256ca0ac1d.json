@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0779861fc5cbad7a9f0948c30a0f8a17ed9dac0469cb822a2f3868256ca0ac1d"
+}

@@ -1,0 +1,30 @@
+[package]
+name = "lattice-security"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+argon2.workspace = true
+base64.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+tokio.workspace = true
+
+[[bench]]
+name = "credentials"
+harness = false

@@ -1,0 +1,46 @@
+[package]
+name = "lattice-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+axum-extra.workspace = true
+chrono.workspace = true
+cookie.workspace = true
+futures-util.workspace = true
+http.workspace = true
+lattice-aibridge.workspace = true
+lattice-project.workspace = true
+lattice-security.workspace = true
+lattice-telemetry.workspace = true
+openidconnect.workspace = true
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tower_governor.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+http-body-util = "0.1"
+serde_json.workspace = true
+tokio.workspace = true
+tower.workspace = true
+
+[[bench]]
+name = "router"
+harness = false

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.role FROM project_members m JOIN projects p ON p.id = m.project_id\n         WHERE m.project_id = $1 AND m.user_id = $2 AND p.workspace_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "caa8f1a01b7a8b51e453a590bef99f9691f84a70bc6c047700aa35625d870d87"
+}
