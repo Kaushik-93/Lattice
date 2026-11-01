@@ -74,7 +74,10 @@ jobs:
       - name: Generated contracts are up to date
         run: |
           ./scripts/gen.sh
-          git diff --exit-code -- packages/shared-types services/ai/src/lattice
+          if ! git diff --exit-code --stat -- packages/shared-types services/ai/src/lattice; then
+            echo "::error title=Generated contracts are stale::Run scripts/gen.sh and commit: $(git diff --name-only | tr '\n' ' ')"
+            exit 1
+          fi
 
   ai:
     name: AI service (Python)

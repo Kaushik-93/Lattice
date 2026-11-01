@@ -5,6 +5,9 @@
 #   Rust API types (ts-rs)  → packages/shared-types/src/** (TypeScript)
 # The gateway's Rust gRPC code is generated at build time by crates/aibridge/build.rs.
 set -euo pipefail
+# Byte-order globbing, so the export list is the same on every machine (macOS's default
+# collation would sort "Measure" before "MeResponse"; CI's sorts it after).
+export LC_ALL=C
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
 
