@@ -6,9 +6,11 @@
 //! semantic layer in front of it and row-level-security predicates inside it.
 
 mod compile;
-mod sql;
+pub mod sql;
 
-pub use compile::{CompiledQuery, OutputColumn, ParamValue, compile};
+pub use compile::{
+    ColumnRole, CompiledQuery, DimParts, OutputColumn, ParamValue, bucket_name, compile, dimension_parts,
+};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

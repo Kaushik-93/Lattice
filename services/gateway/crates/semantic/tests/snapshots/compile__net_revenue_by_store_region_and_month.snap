@@ -1,0 +1,7 @@
+---
+source: crates/semantic/tests/compile.rs
+expression: "render(&model, &q)"
+---
+SELECT "k0" AS "region", make_date("k1_y", "k1_m", 1) AS "order_date_month", "m0" AS "net_revenue" FROM (SELECT "e2"."region" AS "k0", year("e0"."order_date") AS "k1_y", month("e0"."order_date") AS "k1_m", sum("e0"."amount") FILTER (WHERE ("e0"."status" = ?)) AS "m0" FROM "project"."s"."orders" AS "e0" LEFT JOIN "project"."s"."customers" AS "e1" ON "e0"."customer_id" = "e1"."customer_id" LEFT JOIN "project"."s"."stores" AS "e2" ON "e0"."store_id" = "e2"."store_id" WHERE COALESCE("e1"."is_internal" = ?, TRUE) GROUP BY ALL) ORDER BY "region" ASC NULLS LAST, "order_date_month" ASC NULLS LAST LIMIT 10001
+-- params: [Text("settled"), Bool(false)]
+-- grain: order · logic: 00000000-0000-0000-0000-000000000014@1,00000000-0000-0000-0000-000000000015@1,00000000-0000-0000-0000-00000000001e@1 · tables: [100, 101, 102]

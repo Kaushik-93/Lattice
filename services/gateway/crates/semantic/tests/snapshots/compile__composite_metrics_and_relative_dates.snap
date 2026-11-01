@@ -1,0 +1,7 @@
+---
+source: crates/semantic/tests/compile.rs
+expression: "render(&model, &query(&[31, 32], vec![dim(\"order\", \"region\", None)]))"
+---
+SELECT "e0"."region" AS "region", (CAST((sum("e0"."amount") FILTER (WHERE ("e0"."status" = ?))) AS DOUBLE) / NULLIF(count(*) FILTER (WHERE ("e0"."status" = ?)), 0)) AS "average_order_value", count(DISTINCT "e0"."customer_id") FILTER (WHERE (("e0"."status" = ?) AND "e0"."order_date" >= (CAST(? AS DATE) - INTERVAL 90 DAY))) AS "active_customers" FROM "project"."s"."orders" AS "e0" LEFT JOIN "project"."s"."customers" AS "e1" ON "e0"."customer_id" = "e1"."customer_id" WHERE COALESCE("e1"."is_internal" = ?, TRUE) GROUP BY ALL ORDER BY "region" ASC NULLS LAST LIMIT 10001
+-- params: [Text("settled"), Text("settled"), Text("settled"), Text("2026-11-01"), Bool(false)]
+-- grain: order · logic: 00000000-0000-0000-0000-000000000014@1,00000000-0000-0000-0000-000000000015@1,00000000-0000-0000-0000-00000000001e@1,00000000-0000-0000-0000-00000000001f@1,00000000-0000-0000-0000-000000000020@1 · tables: [100, 101]

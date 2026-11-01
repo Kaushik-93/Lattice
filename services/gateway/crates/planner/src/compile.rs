@@ -407,24 +407,28 @@ fn order_by(query: &TableQuery, columns: &[OutputColumn]) -> Result<String, Plan
     })
 }
 
-struct DimParts {
+/// How a dimension appears in SQL. Year/quarter/month buckets group on integer date parts in an
+/// inner query and rebuild the date in an outer one (docs/adr/0004); the semantic compiler uses
+/// the same shapes.
+pub struct DimParts {
     /// Expression for the single-level form.
-    expr: String,
-    alias: String,
+    pub expr: String,
+    pub alias: String,
     /// Select items for the inner query of the two-level form.
-    inner: Vec<String>,
+    pub inner: Vec<String>,
     /// Outer select item when the dimension needs rebuilding from integer parts.
-    outer: Option<String>,
-    key: String,
+    pub outer: Option<String>,
+    /// The inner query's name for a dimension without an outer form.
+    pub key: String,
 }
 
 impl DimParts {
-    fn simple_outer(&self) -> String {
+    pub fn simple_outer(&self) -> String {
         format!("{} AS {}", ident(&self.key), ident(&self.alias))
     }
 }
 
-fn dimension_parts(
+pub fn dimension_parts(
     i: usize,
     c: &str,
     class: TypeClass,
@@ -480,7 +484,7 @@ fn dimension_parts(
     }
 }
 
-fn bucket_name(b: TimeBucket) -> &'static str {
+pub fn bucket_name(b: TimeBucket) -> &'static str {
     match b {
         TimeBucket::Year => "year",
         TimeBucket::Quarter => "quarter",

@@ -28,6 +28,7 @@ lattice-knowledge = { path = "crates/knowledge" }
 lattice-planner = { path = "crates/planner" }
 lattice-project = { path = "crates/project" }
 lattice-security = { path = "crates/security" }
+lattice-semantic = { path = "crates/semantic" }
 lattice-sheets = { path = "crates/sheets" }
 lattice-telemetry = { path = "crates/telemetry" }
 lattice-visuals = { path = "crates/visuals" }

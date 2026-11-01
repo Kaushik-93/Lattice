@@ -2415,6 +2415,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lattice-semantic"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "insta",
+ "lattice-planner",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "lattice-sheets"
 version = "0.1.0"
 dependencies = [

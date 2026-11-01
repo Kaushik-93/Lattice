@@ -29,6 +29,27 @@ gates, evals and traces, so the system can be relied on — and when it isn't su
    few sample values. It never receives full query results; its preview tool returns shapes and
    sanity statistics, not rows.
 
+Decided for slice 3.2 (2026-11-01):
+
+5. **Time comparisons**: previous period, same period last year, and year/quarter/month to
+   date, all on the fiscal calendar note.
+6. **Example cases gate approval**: a definition can't be approved while any of its example
+   cases fails; the reviewer sees which and why.
+7. **Sheets offer governed metrics first**; raw column aggregations stay available for
+   exploration, marked as not governed.
+8. **Unapproved metrics may be used on sheets, badged** "Uses unapproved logic" with a link to
+   the proposal (spec §6.3); the badge goes when the logic is approved.
+
+9. **Local models by default** (amends spec §2.3, whose default is Claude): the AI service
+   talks to an OpenAI-compatible endpoint, served in development by `mlx_lm.server` running
+   Qwen 3 natively on the Mac (MLX can't run inside Docker; the AI container reaches it at
+   `host.docker.internal`), and on Linux servers by vLLM, llama.cpp or Ollama. Hosted
+   providers (Claude) stay pluggable behind the same `LlmProvider` protocol. On the 16 GB
+   reference machine a 4-bit Qwen3-8B fits comfortably; which model is good enough is
+   decided by the evals, not assumed.
+10. **Embeddings are computed locally** by a small open embedding model in the AI service, so
+    knowledge retrieval sends nothing off the machine.
+
 ## The graph
 
 - **Notes** have a kind — entity, metric, dimension, rule, relationship, term, fact — a title, a
@@ -99,6 +120,6 @@ or edits the plan before any sheet is created.
 ## Build order
 
 3.1 graph core (notes, links, revisions and lifecycle, owners, graph view, approval queue) · 3.2 expression language and semantic compiler, definition tests, impact on publish ·
-3.3 profile-based capture, "promote to metric" · 4.1 agent harness (tool server, Claude loop,
-tracing, evals) · 4.2 copilot with clarifying questions · 4.3 project → dashboard generation ·
+3.3 profile-based capture, "promote to metric" · 4.1 agent harness (tool server, model loop over
+the OpenAI-compatible provider, tracing, evals) · 4.2 copilot with clarifying questions · 4.3 project → dashboard generation ·
 4.4 capture from conversations and the agent's question queue.
