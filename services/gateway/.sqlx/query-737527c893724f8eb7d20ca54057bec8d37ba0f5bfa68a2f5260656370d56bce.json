@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM knowledge_revisions WHERE note_id = $1 AND status = 'draft'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "737527c893724f8eb7d20ca54057bec8d37ba0f5bfa68a2f5260656370d56bce"
+}

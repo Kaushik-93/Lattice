@@ -220,6 +220,25 @@ pub async fn owner_and_admins(
     Ok((row.created_by, row.admins))
 }
 
+/// The caller's role in every project of their workspace they belong to.
+pub async fn roles_for_user(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, ProjectRole>, ProjectError> {
+    let rows = sqlx::query!(
+        "SELECT m.project_id, m.role FROM project_members m JOIN projects p ON p.id = m.project_id
+         WHERE m.user_id = $1 AND p.workspace_id = $2",
+        user_id,
+        workspace_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|r| Ok((r.project_id, r.role.parse()?)))
+        .collect()
+}
+
 /// The caller's role in a project, scoped to their workspace. `None` means no access,
 /// including when the project exists in another workspace (no existence oracle).
 pub async fn role_of(

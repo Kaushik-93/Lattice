@@ -21,6 +21,7 @@ lattice-cache.workspace = true
 lattice-catalog.workspace = true
 lattice-connectors.workspace = true
 lattice-engine.workspace = true
+lattice-knowledge.workspace = true
 lattice-planner.workspace = true
 lattice-project.workspace = true
 lattice-security.workspace = true

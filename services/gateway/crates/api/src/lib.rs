@@ -37,7 +37,10 @@ pub use config::Config;
 pub use state::{AppState, GATEWAY_VERSION, StartupError};
 
 use crate::auth::{oidc, password};
-use crate::routes::{health, projects, sheets as sheet_routes, sources as source_routes};
+use crate::routes::{
+    health, knowledge as knowledge_routes, projects, sheets as sheet_routes,
+    sources as source_routes,
+};
 
 pub fn router(state: AppState) -> Router {
     // Brute-force brake on credential endpoints: bursts of 20, then one attempt per second per IP.
@@ -116,6 +119,46 @@ pub fn router(state: AppState) -> Router {
             axum::routing::delete(sheet_routes::remove_member),
         )
         .route("/shared/{token}", get(sheet_routes::shared))
+        .route(
+            "/workspace/members",
+            get(knowledge_routes::workspace_members),
+        )
+        .route("/knowledge/graph", get(knowledge_routes::graph))
+        .route("/knowledge/queue", get(knowledge_routes::queue))
+        .route("/knowledge/notes", post(knowledge_routes::create))
+        .route("/knowledge/notes/{id}", get(knowledge_routes::get))
+        .route(
+            "/knowledge/notes/{id}/draft",
+            axum::routing::put(knowledge_routes::save_draft),
+        )
+        .route(
+            "/knowledge/notes/{id}/submit",
+            post(knowledge_routes::submit),
+        )
+        .route(
+            "/knowledge/notes/{id}/approve",
+            post(knowledge_routes::approve),
+        )
+        .route(
+            "/knowledge/notes/{id}/reject",
+            post(knowledge_routes::reject),
+        )
+        .route(
+            "/knowledge/notes/{id}/discard",
+            post(knowledge_routes::discard),
+        )
+        .route(
+            "/knowledge/notes/{id}/revert",
+            post(knowledge_routes::revert),
+        )
+        .route(
+            "/knowledge/notes/{id}/deprecate",
+            post(knowledge_routes::deprecate),
+        )
+        .route(
+            "/knowledge/notes/{id}/owner",
+            axum::routing::put(knowledge_routes::set_owner),
+        )
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),

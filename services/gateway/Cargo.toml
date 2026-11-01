@@ -24,6 +24,7 @@ lattice-cache = { path = "crates/cache" }
 lattice-catalog = { path = "crates/catalog" }
 lattice-connectors = { path = "crates/connectors" }
 lattice-engine = { path = "crates/engine" }
+lattice-knowledge = { path = "crates/knowledge" }
 lattice-planner = { path = "crates/planner" }
 lattice-project = { path = "crates/project" }
 lattice-security = { path = "crates/security" }

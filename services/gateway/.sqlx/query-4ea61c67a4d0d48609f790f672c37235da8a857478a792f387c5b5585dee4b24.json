@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE knowledge_notes SET deprecated_at = CASE WHEN $2 THEN now() END WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ea61c67a4d0d48609f790f672c37235da8a857478a792f387c5b5585dee4b24"
+}

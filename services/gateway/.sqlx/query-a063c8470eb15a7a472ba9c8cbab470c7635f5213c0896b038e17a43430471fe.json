@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n               SELECT 1 FROM knowledge_notes n JOIN knowledge_revisions r ON r.note_id = n.id\n               WHERE n.workspace_id = $1 AND n.project_id IS NOT DISTINCT FROM $2\n                 AND r.title_key = $3 AND r.status IN ('draft', 'pending', 'approved')\n                 AND n.deprecated_at IS NULL\n                 AND ($4::uuid IS NULL OR n.id <> $4)\n           ) AS \"taken!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "taken!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a063c8470eb15a7a472ba9c8cbab470c7635f5213c0896b038e17a43430471fe"
+}

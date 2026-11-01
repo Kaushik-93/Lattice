@@ -5,6 +5,7 @@
 use lattice_catalog::{self as catalog, NewSource, SourceStatus};
 use lattice_connectors::SourceKind;
 use lattice_engine::demo;
+use lattice_knowledge::{self as knowledge, NewNote, NoteEdit, NoteKind, Provenance, Viewer};
 use lattice_project::NewProject;
 use lattice_security::ProjectRole;
 use lattice_security::WorkspaceRole;
@@ -134,7 +135,253 @@ pub async fn seed_demo_data(
     .fetch_one(&state.pool)
     .await?;
     seed_demo_sheets(state, seed, table).await?;
+    seed_demo_knowledge(&state.pool, seed).await?;
     Ok(source)
+}
+
+/// What the demo seeds into the knowledge graph: (kind, title, team, body, formula, state, local).
+type DemoNote = (
+    NoteKind,
+    &'static str,
+    Option<&'static str>,
+    &'static str,
+    Option<&'static str>,
+    DemoState,
+    bool,
+);
+
+#[derive(Clone, Copy, PartialEq)]
+enum DemoState {
+    Approved,
+    Pending,
+    Draft,
+}
+
+/// A starter knowledge graph shaped like the design's screen 05, in every state: approved notes,
+/// proposals waiting for review, a draft, and links to a note nobody has written yet. Seeded
+/// through the same create → submit → approve path people use. Nothing here claims to come
+/// from the AI (phase 4): proposals are marked as demo content.
+pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), ApiError> {
+    use DemoState::*;
+    use NoteKind::*;
+    let notes: [DemoNote; 17] = [
+        (
+            Entity,
+            "Customer",
+            Some("Data platform"),
+            "A person or business that has bought from Acme Retail: one customer, even when they \
+          appear in several systems. Places [[Order]]s; counted by [[Active customer]] and \
+          [[Churned customer]].\n\nMapped to the `customers` table.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Entity,
+            "Order",
+            Some("Data platform"),
+            "A purchase, online or in store, by a [[Customer]] at a [[Store]], in a \
+          [[Product category]]. Only [[Settled orders only|settled]] orders count toward \
+          [[Net revenue]].\n\nMapped to the `orders` table.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Entity,
+            "Store",
+            Some("Retail ops"),
+            "A shop or the online store, located in a [[Region]].\n\nMapped to the `stores` table.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Entity,
+            "Refund",
+            Some("Finance"),
+            "Money returned for an [[Order]]: an order whose status is `refunded`. Excluded from \
+          [[Net revenue]] by [[Settled orders only]].",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Dimension,
+            "Region",
+            Some("Retail ops"),
+            "AMER, EMEA or APAC: the region of the [[Store]] an [[Order]] was placed at.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Dimension,
+            "Product category",
+            Some("Merchandising"),
+            "The category of what an [[Order]] bought: Home & kitchen, Outdoor, Apparel, Electronics, \
+          Beauty, Toys, Grocery, Sports.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Metric,
+            "Net revenue",
+            Some("Finance"),
+            "Revenue from [[Order]]s that are [[Settled orders only|settled]] — refunded and pending \
+          orders don't count. Reported by the [[Fiscal calendar]]. Also called [[Sales]] or \
+          [[Turnover]].",
+            Some("SUM(order.amount) WHERE order.status = 'settled'"),
+            Approved,
+            false,
+        ),
+        (
+            Metric,
+            "Average order value",
+            Some("Finance"),
+            "[[Net revenue]] divided by the number of settled [[Order]]s.",
+            Some("SUM(order.amount) / COUNT(order) WHERE order.status = 'settled'"),
+            Approved,
+            false,
+        ),
+        (
+            Metric,
+            "Active customer",
+            Some("Growth"),
+            "A [[Customer]] with a settled [[Order]] in the last 90 days.",
+            Some(
+                "COUNT DISTINCT order.customer WHERE order.status = 'settled' AND order.date >= today - 90 days",
+            ),
+            Approved,
+            false,
+        ),
+        (
+            Rule,
+            "Settled orders only",
+            Some("Finance"),
+            "Only orders with status `settled` count toward revenue metrics such as [[Net revenue]]; \
+          `pending` and `refunded` ([[Refund]]) orders don't.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Rule,
+            "Fiscal calendar",
+            Some("Finance"),
+            "The fiscal year starts on 1 February, so fiscal Q3 runs August–October. Period \
+          comparisons of [[Net revenue]] use fiscal quarters.",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Term,
+            "Sales",
+            None,
+            "Another word for [[Net revenue]].",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Term,
+            "Turnover",
+            None,
+            "Another word for [[Net revenue]].",
+            None,
+            Approved,
+            false,
+        ),
+        (
+            Metric,
+            "Churned customer",
+            Some("Growth"),
+            "A [[Customer]] whose last settled [[Order]] was more than 180 days ago.",
+            Some("COUNT customer WHERE days_since(last settled order.date) > 180"),
+            Pending,
+            false,
+        ),
+        (
+            Rule,
+            "Exclude internal accounts",
+            Some("Data platform"),
+            "Customers flagged `is_internal` (staff and test accounts) are left out of every \
+          [[Customer]] metric, such as [[Active customer]].",
+            None,
+            Pending,
+            false,
+        ),
+        (
+            Metric,
+            "Refund rate",
+            Some("Finance"),
+            "The share of [[Order]]s that end as a [[Refund]]. About 3 % of orders in the demo data \
+          have status `refunded`.",
+            Some("COUNT(order WHERE order.status = 'refunded') / COUNT(order)"),
+            Draft,
+            false,
+        ),
+        (
+            Fact,
+            "Board pack",
+            None,
+            "The [[Revenue Review]] sheet goes to the board each quarter, filtered to the fiscal \
+          quarter from the [[Fiscal calendar]].",
+            None,
+            Approved,
+            true,
+        ),
+    ];
+    let viewer = Viewer {
+        user_id: seed.admin_id,
+        workspace_id: seed.workspace_id,
+        workspace_role: WorkspaceRole::Admin,
+        projects: lattice_project::roles_for_user(pool, seed.workspace_id, seed.admin_id).await?,
+    };
+    for (kind, title, team, body, formula, state, local) in notes {
+        let new = NewNote {
+            kind,
+            title: title.into(),
+            body: body.into(),
+            definition: formula.map(|f| json!({ "formula": f })),
+            project_id: local.then_some(seed.revenue_project),
+            owner_team: team.map(Into::into),
+            submit: Some(state != Draft),
+        };
+        let provenance = Provenance {
+            author: "system".into(),
+            value: json!({ "source": "demo" }),
+        };
+        let id = knowledge::create(pool, &viewer, &new, provenance).await?;
+        if state == Approved {
+            knowledge::approve(pool, &viewer, id).await?;
+        }
+    }
+    // A proposed change waiting on an approved metric: shorten the active window.
+    let active = knowledge::graph(pool, &viewer, None)
+        .await?
+        .nodes
+        .into_iter()
+        .find(|n| n.title == "Active customer")
+        .map(|n| n.id);
+    if let Some(id) = active {
+        knowledge::save_draft(
+            pool,
+            &viewer,
+            id,
+            &NoteEdit {
+                title: "Active customer".into(),
+                body: "A [[Customer]] with a settled [[Order]] in the last 60 days.".into(),
+                definition: Some(json!({ "formula": "COUNT DISTINCT order.customer WHERE order.status = 'settled' AND order.date >= today - 60 days" })),
+                change_note: Some("Growth reviews activity monthly; 90 days lags behind.".into()),
+            },
+        )
+        .await?;
+        knowledge::submit(pool, &viewer, id).await?;
+    }
+    Ok(())
 }
 
 /// "Revenue Review" (screen 06 of the design), "Regional ops" and "Order explorer" (a million

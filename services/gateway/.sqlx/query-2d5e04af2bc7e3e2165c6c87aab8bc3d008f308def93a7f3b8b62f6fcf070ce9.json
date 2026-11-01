@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE knowledge_notes SET owner_id = $2, owner_team = $3 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d5e04af2bc7e3e2165c6c87aab8bc3d008f308def93a7f3b8b62f6fcf070ce9"
+}

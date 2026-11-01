@@ -111,6 +111,19 @@ impl From<lattice_connectors::ConnectorError> for ApiError {
     }
 }
 
+impl From<lattice_knowledge::KnowledgeError> for ApiError {
+    fn from(err: lattice_knowledge::KnowledgeError) -> Self {
+        use lattice_knowledge::KnowledgeError as E;
+        match err {
+            E::Invalid(m) => ApiError::BadRequest(m),
+            E::Conflict(m) => ApiError::Conflict(m),
+            E::Forbidden => ApiError::Forbidden,
+            E::NotFound => ApiError::NotFound,
+            other => ApiError::internal(other),
+        }
+    }
+}
+
 impl From<lattice_sheets::SheetError> for ApiError {
     fn from(err: lattice_sheets::SheetError) -> Self {
         use lattice_sheets::SheetError as E;

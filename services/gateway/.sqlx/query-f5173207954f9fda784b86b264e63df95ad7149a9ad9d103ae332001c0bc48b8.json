@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE knowledge_revisions SET status = 'superseded'\n         WHERE note_id = $1 AND status = 'approved'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5173207954f9fda784b86b264e63df95ad7149a9ad9d103ae332001c0bc48b8"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO knowledge_revisions\n                     (note_id, version, title, title_key, body, definition, status, author,\n                      provenance, change_note)\n                 SELECT $1, COALESCE(max(version), 0) + 1, $2, $3, $4, $5, 'draft', $6,\n                        '{\"source\": \"manual\"}'::jsonb, $7\n                 FROM knowledge_revisions WHERE note_id = $1\n                 RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "24bad95494fa28e43315f2174c1e3c7ec9ae296963d8819aa0dbd5dbfa32bd44"
+}

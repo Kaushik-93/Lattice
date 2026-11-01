@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM knowledge_revisions WHERE note_id = $1 AND status IN ('draft', 'pending')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cab3f49d6e8160188fb29413a17b074d11b73b3ce856c0c70eb58a70cbb6c6ce"
+}

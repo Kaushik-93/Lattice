@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO knowledge_links (revision_id, target_key, target_title)\n         SELECT $1, * FROM UNNEST($2::text[], $3::text[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b65ab61e81bbfca304e952f2d40b8e94c4ec4d6184b20a57a1e1943ac9e368f"
+}

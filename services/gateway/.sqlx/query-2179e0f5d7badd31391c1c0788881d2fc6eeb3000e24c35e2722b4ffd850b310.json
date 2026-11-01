@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.version, r.title, r.body, r.definition, r.status, r.author,\n                  r.provenance, r.change_note, r.reviewed_at, r.review_reason,\n                  r.created_at, r.updated_at,\n                  a.display_name AS \"author_name?\", v.display_name AS \"reviewer_name?\"\n           FROM knowledge_revisions r\n           LEFT JOIN users a ON r.author = 'user:' || a.id::text\n           LEFT JOIN users v ON v.id = r.reviewed_by\n           WHERE r.note_id = $1 ORDER BY r.version DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "definition",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "author",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "provenance",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "change_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "reviewed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "review_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "author_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "reviewer_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2179e0f5d7badd31391c1c0788881d2fc6eeb3000e24c35e2722b4ffd850b310"
+}

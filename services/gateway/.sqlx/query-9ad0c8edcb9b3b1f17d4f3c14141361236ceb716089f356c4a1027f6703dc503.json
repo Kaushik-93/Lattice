@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO project_members (project_id, user_id, role) SELECT $1, id, 'viewer' FROM users WHERE email = 'vic@acme.example'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9ad0c8edcb9b3b1f17d4f3c14141361236ceb716089f356c4a1027f6703dc503"
+}

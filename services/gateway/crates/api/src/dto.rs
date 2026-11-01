@@ -204,6 +204,53 @@ pub struct AddSheetMemberRequest {
     pub email: String,
 }
 
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct QueueResponse {
+    pub items: Vec<lattice_knowledge::QueueItem>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct RejectNoteRequest {
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct RevertNoteRequest {
+    pub version: i32,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct DeprecateNoteRequest {
+    pub deprecated: bool,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct SetOwnerRequest {
+    #[serde(default)]
+    pub owner_id: Option<Uuid>,
+    #[serde(default)]
+    pub team: Option<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct WorkspaceMember {
+    pub user_id: Uuid,
+    pub display_name: String,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct WorkspaceMembersResponse {
+    pub members: Vec<WorkspaceMember>,
+}
+
 /// What a share link opens (design screen 08).
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]
