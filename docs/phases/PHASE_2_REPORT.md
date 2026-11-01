@@ -152,6 +152,11 @@ Fixed along the way (on `main`, after the phase 1 push):
    uploads, no re-hydration from object storage, global memory budget, key rotation, cold image
    build time, shared CI runners).
 
+## CI
+
+Green on `db76f9b`, all five jobs (gateway, web, AI service, benchmarks, clean `docker compose
+up` + e2e + load): https://github.com/Kaushik-93/Lattice/actions/runs/41343884914
+
 ## Next
 
 Phase 3 (business logic) and phase 4 (AI) are for the product owner to start. Without them, the
