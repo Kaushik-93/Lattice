@@ -15,7 +15,7 @@
 | Redis | `redis:7.4.12-alpine` | 7.x as specified (8.x exists) |
 | Object storage | `rustfs/rustfs:1.0.3` | replaces MinIO, see below |
 | Rust build | `rust:1.99.1-slim-trixie` + `cargo-chef 0.1.78` | |
-| Gateway runtime | `gcr.io/distroless/cc-debian13:nonroot` | 75.6 MB image, no shell, uid 65532 |
+| Gateway runtime | `gcr.io/distroless/cc-debian13:nonroot` | no shell, uid 65532; 309 MB with DuckDB and its extensions (75.6 MB in phase 0, see ADR 0004) |
 | Python | `python:3.13.18-slim-trixie` + `ghcr.io/astral-sh/uv:0.8.19` | uv matches the version that wrote `uv.lock` |
 | Node | `node:24.22.2-trixie-slim` | Node 24 is the active LTS |
 | Dev IdP (profile `sso`) | `ghcr.io/navikt/mock-oauth2-server:6.0.0` | local SSO testing only |
@@ -33,6 +33,13 @@ PGDG removes superseded package versions from its main repo. When a Postgres ima
   Pydantic 2.14, mypy 2.4 (`--strict`), ruff 0.17. Locked in `services/ai/uv.lock`.
 - Next.js 16.4.3, React 19.3, Tailwind 4, TypeScript 5.9, TanStack Query 5, Zustand 5, Vitest 5,
   Playwright 1.64. Locked in `package-lock.json`.
+
+Added in phase 1 (checked 2026-11-01):
+
+- Gateway: `duckdb ~1.10506.1` (DuckDB 1.5.6, tilde-pinned because the crate encodes DuckDB's
+  version in its minor), arrow 58 (DuckDB's), object_store 0.12 (S3 only), calamine 0.37 (Excel
+  sheet listing), aes-gcm 0.10, insta 1 (planner SQL snapshots), tokio-tungstenite 0.29 (tests).
+- Web: apache-arrow 21.2, @tanstack/react-table 8.21, @tanstack/react-virtual 3.14.
 
 ## Deviations from SPEC.md
 
