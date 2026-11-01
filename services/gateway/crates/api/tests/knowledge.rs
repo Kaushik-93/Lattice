@@ -375,7 +375,7 @@ async fn the_demo_seeds_a_graph_in_every_state(pool: PgPool) {
             .unwrap()["state"]
             .clone()
     };
-    assert_eq!(g["nodes"].as_array().unwrap().len(), 17);
+    assert_eq!(g["nodes"].as_array().unwrap().len(), 19);
     assert_eq!(state("Net revenue"), "approved");
     assert_eq!(state("Churned customer"), "pending");
     assert_eq!(state("Active customer"), "change_pending");

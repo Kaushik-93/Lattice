@@ -1,25 +1,30 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT workspace_id, project_id, owner_id, deprecated_at IS NOT NULL AS \"deprecated!\"\n           FROM knowledge_notes WHERE id = $1 FOR UPDATE",
+  "query": "SELECT kind, workspace_id, project_id, owner_id, deprecated_at IS NOT NULL AS \"deprecated!\"\n           FROM knowledge_notes WHERE id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
         "name": "workspace_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "project_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "owner_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "deprecated!",
         "type_info": "Bool"
       }
@@ -31,10 +36,11 @@
     },
     "nullable": [
       false,
+      false,
       true,
       true,
       null
     ]
   },
-  "hash": "97bcc2d857ee46d4a58d956c23a1fd935a3a9f98834f9630b0ecfaa6ade43dc5"
+  "hash": "71251875a90f27f11bc158644f88c2c4b8fa7f916e5890bb8c806aecfc3538b4"
 }

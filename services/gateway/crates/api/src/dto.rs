@@ -399,3 +399,91 @@ pub struct QueryTimings {
     pub serialize_ms: f64,
     pub total_ms: f64,
 }
+
+/// A computable note as the project's model uses it.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelDefinition {
+    pub note_id: Uuid,
+    pub title: String,
+    pub version: i32,
+    pub standing: lattice_semantic::Standing,
+    /// Why it can't be used in this project yet (a bad formula, an unbound entity…).
+    pub problem: Option<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelTable {
+    pub table_id: Uuid,
+    pub name: String,
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelEntity {
+    #[serde(flatten)]
+    pub definition: ModelDefinition,
+    /// What formulas call it: "Product category" → `product_category`.
+    pub ident: String,
+    pub table: Option<ModelTable>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelMetric {
+    #[serde(flatten)]
+    pub definition: ModelDefinition,
+    pub formula: Option<String>,
+    /// The entity it counts over, once it checks out.
+    pub grain: Option<String>,
+    /// Other definitions it uses.
+    pub uses: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelDimension {
+    #[serde(flatten)]
+    pub definition: ModelDefinition,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelRule {
+    #[serde(flatten)]
+    pub definition: ModelDefinition,
+    pub condition: Option<String>,
+    /// Applies to every query that reaches its entity.
+    pub always: bool,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ModelRelationship {
+    #[serde(flatten)]
+    pub definition: ModelDefinition,
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+/// The semantic model one project sees (docs/adr/0006).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ProjectModelResponse {
+    /// 1 = January.
+    pub fiscal_year_start_month: u32,
+    pub entities: Vec<ModelEntity>,
+    pub metrics: Vec<ModelMetric>,
+    pub dimensions: Vec<ModelDimension>,
+    pub rules: Vec<ModelRule>,
+    pub relationships: Vec<ModelRelationship>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct BindEntityRequest {
+    pub table_id: Uuid,
+}

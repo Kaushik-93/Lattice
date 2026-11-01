@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM entity_bindings WHERE project_id = $1 AND note_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0e5432de6c4f8b3495696a073dc75ab0caea0325f7515cb95f614e28053eefa5"
+}

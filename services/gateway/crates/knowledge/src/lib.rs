@@ -374,6 +374,116 @@ fn validate(title: &str, body: &str, change_note: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Checks a computable definition's syntax on save, so a note can't hold a formula the
+/// compiler can't read. (Whether its entities and columns exist is checked per project, where
+/// they are bound.)
+fn validate_definition(kind: NoteKind, definition: Option<&serde_json::Value>) -> Result<()> {
+    let Some(d) = definition else { return Ok(()) };
+    let invalid = |m: String| Err(KnowledgeError::Invalid(m));
+    if !d.is_object() {
+        return invalid("A definition is an object.".into());
+    }
+    let text = |key: &str| {
+        d.get(key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    };
+    match kind {
+        NoteKind::Metric => {
+            if let Some(f) = text("formula")
+                && let Err(e) = lattice_semantic::formula(f)
+            {
+                return invalid(format!("Formula: {e}"));
+            }
+        }
+        NoteKind::Rule => {
+            if let Some(c) = text("condition")
+                && let Err(e) = lattice_semantic::condition(c)
+            {
+                return invalid(format!("Condition: {e}"));
+            }
+            if let Some(m) = d.get("fiscal_year_start_month")
+                && !m.as_u64().is_some_and(|m| (1..=12).contains(&m))
+            {
+                return invalid("The fiscal year starts in month 1–12.".into());
+            }
+        }
+        NoteKind::Relationship => {
+            for key in ["from", "to"] {
+                match text(key) {
+                    Some(p) => {
+                        if let Err(e) = lattice_semantic::model::parse_path(p) {
+                            return invalid(format!("Relationship {key}: {e}"));
+                        }
+                    }
+                    None => {
+                        return invalid(format!("A relationship needs \"{key}\": entity.column."));
+                    }
+                }
+            }
+        }
+        NoteKind::Dimension => {
+            if let Some(p) = text("path")
+                && let Err(e) = lattice_semantic::model::parse_path(p)
+            {
+                return invalid(format!("Dimension: {e}"));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// A computable note as the semantic model needs it: its approved revision, or (if it has never
+/// been approved) its open one, marked unapproved so results using it carry a badge.
+#[derive(Debug, Clone)]
+pub struct ModelNote {
+    pub note_id: Uuid,
+    pub kind: NoteKind,
+    pub title: String,
+    pub version: i32,
+    pub approved: bool,
+    pub definition: Option<serde_json::Value>,
+}
+
+/// The computable knowledge one project sees: shared notes plus its own, deprecated ones left out.
+pub async fn model_notes(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    project_id: Uuid,
+) -> Result<Vec<ModelNote>> {
+    let rows = sqlx::query!(
+        r#"SELECT n.id, n.kind, r.title, r.version, r.definition, r.status = 'approved' AS "approved!"
+           FROM knowledge_notes n
+           JOIN LATERAL (
+               SELECT title, version, definition, status FROM knowledge_revisions r
+               WHERE r.note_id = n.id AND r.status IN ('approved', 'draft', 'pending')
+               ORDER BY (r.status = 'approved') DESC, r.version DESC LIMIT 1
+           ) r ON true
+           WHERE n.workspace_id = $1 AND (n.project_id IS NULL OR n.project_id = $2)
+             AND n.deprecated_at IS NULL
+             AND n.kind IN ('entity', 'metric', 'dimension', 'rule', 'relationship')
+           ORDER BY n.created_at"#,
+        workspace_id,
+        project_id
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|r| {
+            Ok(ModelNote {
+                note_id: r.id,
+                kind: NoteKind::parse(&r.kind)?,
+                title: r.title,
+                version: r.version,
+                approved: r.approved,
+                definition: r.definition,
+            })
+        })
+        .collect()
+}
+
 // ---- reads ----
 
 /// One visible note with its head revision: the live one when there is one (what everything
@@ -706,6 +816,7 @@ pub async fn queue(pool: &PgPool, viewer: &Viewer) -> Result<Vec<QueueItem>> {
 // ---- writes ----
 
 struct NoteAccess {
+    kind: NoteKind,
     workspace_id: Uuid,
     project_id: Option<Uuid>,
     owner_id: Option<Uuid>,
@@ -714,7 +825,7 @@ struct NoteAccess {
 
 async fn access(tx: &mut sqlx::PgConnection, viewer: &Viewer, note_id: Uuid) -> Result<NoteAccess> {
     let note = sqlx::query!(
-        r#"SELECT workspace_id, project_id, owner_id, deprecated_at IS NOT NULL AS "deprecated!"
+        r#"SELECT kind, workspace_id, project_id, owner_id, deprecated_at IS NOT NULL AS "deprecated!"
            FROM knowledge_notes WHERE id = $1 FOR UPDATE"#,
         note_id
     )
@@ -725,6 +836,7 @@ async fn access(tx: &mut sqlx::PgConnection, viewer: &Viewer, note_id: Uuid) -> 
         return Err(KnowledgeError::NotFound);
     }
     Ok(NoteAccess {
+        kind: NoteKind::parse(&note.kind)?,
         workspace_id: note.workspace_id,
         project_id: note.project_id,
         owner_id: note.owner_id,
@@ -812,6 +924,7 @@ pub async fn create(
     provenance: Provenance,
 ) -> Result<Uuid> {
     validate(&new.title, &new.body, None)?;
+    validate_definition(new.kind, new.definition.as_ref())?;
     if let Some(team) = &new.owner_team
         && team.chars().count() > 60
     {
@@ -887,6 +1000,7 @@ pub async fn save_draft(
     if !viewer.can_draft(note.project_id) || note.deprecated {
         return Err(KnowledgeError::Forbidden);
     }
+    validate_definition(note.kind, edit.definition.as_ref())?;
     let title = edit.title.trim();
     let key = title_key(title);
     ensure_unique_title(

@@ -10,6 +10,7 @@ pub mod middleware;
 pub mod query;
 pub mod routes;
 pub mod seed;
+pub mod semantic;
 pub mod sheets;
 pub mod sources;
 pub mod state;
@@ -38,7 +39,7 @@ pub use state::{AppState, GATEWAY_VERSION, StartupError};
 
 use crate::auth::{oidc, password};
 use crate::routes::{
-    health, knowledge as knowledge_routes, projects, sheets as sheet_routes,
+    health, knowledge as knowledge_routes, model as model_routes, projects, sheets as sheet_routes,
     sources as source_routes,
 };
 
@@ -122,6 +123,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/workspace/members",
             get(knowledge_routes::workspace_members),
+        )
+        .route("/projects/{id}/model", get(model_routes::get))
+        .route(
+            "/projects/{id}/bindings/{note_id}",
+            axum::routing::put(model_routes::bind).delete(model_routes::unbind),
         )
         .route("/knowledge/graph", get(knowledge_routes::graph))
         .route("/knowledge/queue", get(knowledge_routes::queue))

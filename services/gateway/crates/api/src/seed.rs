@@ -136,19 +136,24 @@ pub async fn seed_demo_data(
     .await?;
     seed_demo_sheets(state, seed, table).await?;
     seed_demo_knowledge(&state.pool, seed).await?;
+    seed_demo_bindings(&state.pool, seed, source).await?;
     Ok(source)
 }
 
-/// What the demo seeds into the knowledge graph: (kind, title, team, body, formula, state, local).
+/// What the demo seeds into the knowledge graph: (kind, title, team, body, definition, state,
+/// local).
 type DemoNote = (
     NoteKind,
     &'static str,
     Option<&'static str>,
     &'static str,
-    Option<&'static str>,
+    Option<Value>,
     DemoState,
     bool,
 );
+
+const ACTIVE_CUSTOMER: &str = "COUNT DISTINCT(order.customer_id) WHERE [[Settled orders only]] \
+     AND order.order_date >= TODAY - {days} DAYS";
 
 #[derive(Clone, Copy, PartialEq)]
 enum DemoState {
@@ -164,14 +169,14 @@ enum DemoState {
 pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), ApiError> {
     use DemoState::*;
     use NoteKind::*;
-    let notes: [DemoNote; 17] = [
+    let notes: [DemoNote; 19] = [
         (
             Entity,
             "Customer",
             Some("Data platform"),
             "A person or business that has bought from Acme Retail: one customer, even when they \
           appear in several systems. Places [[Order]]s; counted by [[Active customer]] and \
-          [[Churned customer]].\n\nMapped to the `customers` table.",
+          [[Churned customer]].",
             None,
             Approved,
             false,
@@ -182,7 +187,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Some("Data platform"),
             "A purchase, online or in store, by a [[Customer]] at a [[Store]], in a \
           [[Product category]]. Only [[Settled orders only|settled]] orders count toward \
-          [[Net revenue]].\n\nMapped to the `orders` table.",
+          [[Net revenue]].",
             None,
             Approved,
             false,
@@ -191,7 +196,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Entity,
             "Store",
             Some("Retail ops"),
-            "A shop or the online store, located in a [[Region]].\n\nMapped to the `stores` table.",
+            "A shop or the online store, located in a [[Region]].",
             None,
             Approved,
             false,
@@ -207,11 +212,29 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             false,
         ),
         (
+            Relationship,
+            "Order placed by Customer",
+            Some("Data platform"),
+            "Every [[Order]] is placed by one [[Customer]]; a customer places many orders.",
+            Some(json!({ "from": "order.customer_id", "to": "customer.customer_id" })),
+            Approved,
+            false,
+        ),
+        (
+            Relationship,
+            "Order sold at Store",
+            Some("Retail ops"),
+            "Every [[Order]] is sold at one [[Store]].",
+            Some(json!({ "from": "order.store_id", "to": "store.store_id" })),
+            Approved,
+            false,
+        ),
+        (
             Dimension,
             "Region",
             Some("Retail ops"),
             "AMER, EMEA or APAC: the region of the [[Store]] an [[Order]] was placed at.",
-            None,
+            Some(json!({ "path": "order.region" })),
             Approved,
             false,
         ),
@@ -221,7 +244,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Some("Merchandising"),
             "The category of what an [[Order]] bought: Home & kitchen, Outdoor, Apparel, Electronics, \
           Beauty, Toys, Grocery, Sports.",
-            None,
+            Some(json!({ "path": "order.category" })),
             Approved,
             false,
         ),
@@ -232,7 +255,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             "Revenue from [[Order]]s that are [[Settled orders only|settled]] — refunded and pending \
           orders don't count. Reported by the [[Fiscal calendar]]. Also called [[Sales]] or \
           [[Turnover]].",
-            Some("SUM(order.amount) WHERE order.status = 'settled'"),
+            Some(json!({ "formula": "SUM(order.amount) WHERE [[Settled orders only]]" })),
             Approved,
             false,
         ),
@@ -241,7 +264,9 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             "Average order value",
             Some("Finance"),
             "[[Net revenue]] divided by the number of settled [[Order]]s.",
-            Some("SUM(order.amount) / COUNT(order) WHERE order.status = 'settled'"),
+            Some(
+                json!({ "formula": "[[Net revenue]] / COUNT(order) WHERE [[Settled orders only]]" }),
+            ),
             Approved,
             false,
         ),
@@ -250,9 +275,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             "Active customer",
             Some("Growth"),
             "A [[Customer]] with a settled [[Order]] in the last 90 days.",
-            Some(
-                "COUNT DISTINCT order.customer WHERE order.status = 'settled' AND order.date >= today - 90 days",
-            ),
+            Some(json!({ "formula": ACTIVE_CUSTOMER.replace("{days}", "90") })),
             Approved,
             false,
         ),
@@ -262,7 +285,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Some("Finance"),
             "Only orders with status `settled` count toward revenue metrics such as [[Net revenue]]; \
           `pending` and `refunded` ([[Refund]]) orders don't.",
-            None,
+            Some(json!({ "condition": "order.status = 'settled'" })),
             Approved,
             false,
         ),
@@ -272,7 +295,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Some("Finance"),
             "The fiscal year starts on 1 February, so fiscal Q3 runs August–October. Period \
           comparisons of [[Net revenue]] use fiscal quarters.",
-            None,
+            Some(json!({ "fiscal_year_start_month": 2 })),
             Approved,
             false,
         ),
@@ -298,8 +321,10 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Metric,
             "Churned customer",
             Some("Growth"),
-            "A [[Customer]] whose last settled [[Order]] was more than 180 days ago.",
-            Some("COUNT customer WHERE days_since(last settled order.date) > 180"),
+            "A [[Customer]] whose last settled [[Order]] was more than 180 days ago. Not computable \
+          yet: it needs each customer's last order date, which the expression language can't \
+          express.",
+            None,
             Pending,
             false,
         ),
@@ -309,7 +334,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Some("Data platform"),
             "Customers flagged `is_internal` (staff and test accounts) are left out of every \
           [[Customer]] metric, such as [[Active customer]].",
-            None,
+            Some(json!({ "condition": "customer.is_internal = FALSE", "always": true })),
             Pending,
             false,
         ),
@@ -319,7 +344,9 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             Some("Finance"),
             "The share of [[Order]]s that end as a [[Refund]]. About 3 % of orders in the demo data \
           have status `refunded`.",
-            Some("COUNT(order WHERE order.status = 'refunded') / COUNT(order)"),
+            Some(
+                json!({ "formula": "(COUNT(order) WHERE order.status = 'refunded') / COUNT(order)" }),
+            ),
             Draft,
             false,
         ),
@@ -340,12 +367,12 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
         workspace_role: WorkspaceRole::Admin,
         projects: lattice_project::roles_for_user(pool, seed.workspace_id, seed.admin_id).await?,
     };
-    for (kind, title, team, body, formula, state, local) in notes {
+    for (kind, title, team, body, definition, state, local) in notes {
         let new = NewNote {
             kind,
             title: title.into(),
             body: body.into(),
-            definition: formula.map(|f| json!({ "formula": f })),
+            definition,
             project_id: local.then_some(seed.revenue_project),
             owner_team: team.map(Into::into),
             submit: Some(state != Draft),
@@ -374,12 +401,40 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             &NoteEdit {
                 title: "Active customer".into(),
                 body: "A [[Customer]] with a settled [[Order]] in the last 60 days.".into(),
-                definition: Some(json!({ "formula": "COUNT DISTINCT order.customer WHERE order.status = 'settled' AND order.date >= today - 60 days" })),
+                definition: Some(json!({ "formula": ACTIVE_CUSTOMER.replace("{days}", "60") })),
                 change_note: Some("Growth reviews activity monthly; 90 days lags behind.".into()),
             },
         )
         .await?;
         knowledge::submit(pool, &viewer, id).await?;
+    }
+    Ok(())
+}
+
+/// Connects the shared entities to the demo dataset's tables in Revenue Analytics.
+async fn seed_demo_bindings(pool: &PgPool, seed: &DemoSeed, source: Uuid) -> Result<(), ApiError> {
+    for (entity, table) in [
+        ("order", "orders"),
+        ("customer", "customers"),
+        ("store", "stores"),
+    ] {
+        sqlx::query!(
+            "INSERT INTO entity_bindings (project_id, note_id, table_id, bound_by)
+             SELECT $1, n.id, t.id, $2
+             FROM knowledge_notes n
+             JOIN knowledge_revisions r ON r.note_id = n.id AND r.status = 'approved'
+             JOIN source_tables t ON t.source_id = $3 AND t.table_name = $5
+             WHERE n.workspace_id = $4 AND n.kind = 'entity' AND r.title_key = $6
+             ON CONFLICT DO NOTHING",
+            seed.revenue_project,
+            seed.admin_id,
+            source,
+            seed.workspace_id,
+            table,
+            entity,
+        )
+        .execute(pool)
+        .await?;
     }
     Ok(())
 }

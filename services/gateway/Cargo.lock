@@ -2280,6 +2280,7 @@ dependencies = [
  "lattice-planner",
  "lattice-project",
  "lattice-security",
+ "lattice-semantic",
  "lattice-sheets",
  "lattice-telemetry",
  "lattice-visuals",
@@ -2360,6 +2361,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "lattice-security",
+ "lattice-semantic",
  "serde",
  "serde_json",
  "sqlx",

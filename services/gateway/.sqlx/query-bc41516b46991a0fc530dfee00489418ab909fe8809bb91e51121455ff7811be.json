@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT n.id, n.kind, r.title, r.version, r.definition, r.status = 'approved' AS \"approved!\"\n           FROM knowledge_notes n\n           JOIN LATERAL (\n               SELECT title, version, definition, status FROM knowledge_revisions r\n               WHERE r.note_id = n.id AND r.status IN ('approved', 'draft', 'pending')\n               ORDER BY (r.status = 'approved') DESC, r.version DESC LIMIT 1\n           ) r ON true\n           WHERE n.workspace_id = $1 AND (n.project_id IS NULL OR n.project_id = $2)\n             AND n.deprecated_at IS NULL\n             AND n.kind IN ('entity', 'metric', 'dimension', 'rule', 'relationship')\n           ORDER BY n.created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "definition",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "approved!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "bc41516b46991a0fc530dfee00489418ab909fe8809bb91e51121455ff7811be"
+}

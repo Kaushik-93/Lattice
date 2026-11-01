@@ -7,8 +7,11 @@ pub mod model;
 pub mod parse;
 
 pub use compile::{
-    Compiled, MetricCheck, SemDimension, SemFilter, SemanticError, SemanticQuery, check_metric,
-    check_rule, compile,
+    Compiled, MetricCheck, SemDimension, SemFilter, SemanticError, SemanticQuery, check_dimension,
+    check_metric, check_relationship, check_rule, compile,
 };
-pub use model::{BoundTable, Column, Meta, Model, RawDefinition, Standing, ident};
+pub use model::{
+    BoundTable, Column, DimensionDef, EntityDef, Meta, MetricDef, Model, RawDefinition,
+    RelationshipDef, RuleDef, Standing, ident,
+};
 pub use parse::{ParseError, condition, formula};

@@ -23,6 +23,7 @@ lattice-connectors.workspace = true
 lattice-engine.workspace = true
 lattice-knowledge.workspace = true
 lattice-planner.workspace = true
+lattice-semantic.workspace = true
 lattice-project.workspace = true
 lattice-security.workspace = true
 lattice-sheets.workspace = true

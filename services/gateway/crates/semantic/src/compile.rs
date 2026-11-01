@@ -19,7 +19,7 @@ use lattice_planner::{
 use uuid::Uuid;
 
 use crate::ast::{AggFunc, ArithOp, Cond, Expr, Literal, Operand, Path, Target};
-use crate::model::{BoundTable, Model, RuleDef, Standing, ident};
+use crate::model::{BoundTable, DimensionDef, Model, RelationshipDef, RuleDef, Standing, ident};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[error("{0}")]
@@ -274,6 +274,29 @@ pub fn check_metric(model: &Model, id: Uuid) -> Result<MetricCheck> {
 pub fn check_rule(model: &Model, rule: &RuleDef) -> Result<()> {
     let mut a = Analysis::new(model);
     a.rule(rule)?;
+    Ok(())
+}
+
+/// Checks a dimension: its path names a column of a bound entity.
+pub fn check_dimension(model: &Model, dim: &DimensionDef) -> Result<()> {
+    match &dim.path {
+        None => fail("it has no path (entity.column) yet"),
+        Some(Err(e)) => fail(e.clone()),
+        Some(Ok(p)) => Analysis::new(model).column(p).map(|_| ()),
+    }
+}
+
+/// Checks a relationship: both ends name columns of bound entities.
+pub fn check_relationship(model: &Model, rel: &RelationshipDef) -> Result<()> {
+    let mut a = Analysis::new(model);
+    for end in [&rel.from, &rel.to] {
+        match end {
+            Ok(p) => {
+                a.column(p)?;
+            }
+            Err(e) => return fail(e.clone()),
+        }
+    }
     Ok(())
 }
 

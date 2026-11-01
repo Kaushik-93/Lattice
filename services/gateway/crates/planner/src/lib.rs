@@ -9,7 +9,8 @@ mod compile;
 pub mod sql;
 
 pub use compile::{
-    ColumnRole, CompiledQuery, DimParts, OutputColumn, ParamValue, bucket_name, compile, dimension_parts,
+    ColumnRole, CompiledQuery, DimParts, OutputColumn, ParamValue, bucket_name, compile,
+    dimension_parts,
 };
 
 use serde::{Deserialize, Serialize};
