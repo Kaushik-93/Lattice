@@ -51,6 +51,18 @@ export interface RequestSample {
   at: number;
 }
 
+export interface QuerySample {
+  id: string;
+  rows: number;
+  cached: boolean;
+  /** Gateway total (compile → serialize). */
+  serverMs: number;
+  /** Browser: batch sent → frame received. */
+  clientMs: number;
+  decodeMs: number;
+  at: number;
+}
+
 export interface CommitSample {
   id: string;
   phase: string;
@@ -63,6 +75,7 @@ export const perf = {
   rtt: new Ring<number>(50),
   longTasks: new Ring<number>(100),
   commits: new Ring<CommitSample>(50),
+  queries: new Ring<QuerySample>(20),
   vitals: {} as Partial<Record<"ttfb" | "fcp" | "lcp" | "dcl" | "load", number>>,
 };
 

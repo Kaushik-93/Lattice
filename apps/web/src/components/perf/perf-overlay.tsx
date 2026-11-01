@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { startPerfObservers } from "@/lib/perf/observe";
-import { perf, percentile, type RequestSample } from "@/lib/perf/store";
+import { perf, percentile, type QuerySample, type RequestSample } from "@/lib/perf/store";
 import { useUiStore } from "@/lib/ui-store";
 import { GatewaySocket } from "@/lib/ws";
 
@@ -36,6 +36,7 @@ export function PerfOverlay() {
 interface Snapshot {
   vitals: typeof perf.vitals;
   requests: RequestSample[];
+  queries: QuerySample[];
   rtt: number[];
   longTasks: number[];
   commits: number[];
@@ -45,6 +46,7 @@ function snapshot(): Snapshot {
   return {
     vitals: { ...perf.vitals },
     requests: perf.requests.toArray().reverse().slice(0, 8),
+    queries: perf.queries.toArray().reverse().slice(0, 6),
     rtt: perf.rtt.toArray(),
     longTasks: perf.longTasks.toArray(),
     commits: perf.commits.toArray().map((c) => c.ms),
@@ -140,6 +142,26 @@ function OverlayPanel({ onClose }: { onClose: () => void }) {
       <Section title={`Gateway WebSocket · ${socket}`}>
         <Metric label="RTT (last)" value={lastRtt} />
         <Metric label="RTT p95" value={percentile(snap.rtt, 95)} />
+      </Section>
+
+      <Section title="Queries over WebSocket (gateway · round trip · decode)">
+        {snap.queries.length === 0 ? (
+          <p className="text-[#8e97ad]">No queries yet.</p>
+        ) : (
+          snap.queries.map((q) => (
+            <div
+              key={`${q.at}-${q.id}`}
+              className="flex justify-between gap-2 border-t border-white/5 py-0.5"
+            >
+              <span className="truncate text-[#b4bbcc]">
+                {q.id} · {q.rows} rows{q.cached ? " · cached" : ""}
+              </span>
+              <span className="shrink-0">
+                {fmt(q.serverMs)} · {fmt(q.clientMs)} · {fmt(q.decodeMs)} ms
+              </span>
+            </div>
+          ))
+        )}
       </Section>
 
       <Section title="Gateway requests (browser total · server phases)">

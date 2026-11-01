@@ -16,6 +16,9 @@
   "dependencies": {
     "@lattice/shared-types": "*",
     "@tanstack/react-query": "^5.105.0",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.14.24",
+    "apache-arrow": "^21.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.66.0",

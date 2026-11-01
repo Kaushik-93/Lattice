@@ -12,8 +12,9 @@ import { isSignedOutError } from "@/components/shell/auth-gate";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SourceBadge, statusDot, statusLabel } from "@/components/sources/source-meta";
 import { capitalize } from "@/lib/format";
-import { useProject } from "@/lib/queries";
+import { useProject, useSources } from "@/lib/queries";
 
 import { ProjectTile } from "./project-tile";
 
@@ -93,12 +94,7 @@ export function ProjectOverview() {
       </section>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] items-start gap-4">
-        <Panel id="sources" title="Sources in this project">
-          <Empty>
-            No sources connected. Connectors for files, Postgres, MySQL and SQLite arrive in phase
-            1; each new source is profiled and its definitions proposed for your approval.
-          </Empty>
-        </Panel>
+        <SourcesPanel projectId={project.id} />
 
         <Panel id="members" title="Members" count={members.length}>
           {members.map((member) => (
@@ -123,6 +119,52 @@ export function ProjectOverview() {
   );
 }
 
+function SourcesPanel({ projectId }: { projectId: string }) {
+  const sources = useSources(projectId);
+  return (
+    <Panel
+      id="sources"
+      title="Sources in this project"
+      action={
+        <Link
+          href={`/projects/${projectId}/sources`}
+          className="text-[13px] font-medium no-underline"
+        >
+          Manage
+        </Link>
+      }
+    >
+      {sources.isPending ? (
+        <Skeleton className="h-24 w-full" />
+      ) : sources.data && sources.data.length > 0 ? (
+        sources.data.map((s) => (
+          <Link
+            key={s.id}
+            href={`/projects/${projectId}/sources/${s.id}`}
+            className="flex items-center gap-2.5 text-sm text-foreground no-underline hover:text-primary"
+          >
+            <SourceBadge source={s} size={30} />
+            <span className="min-w-0 flex-1 truncate">{s.name}</span>
+            <span
+              aria-hidden="true"
+              className="size-2 rounded-full"
+              style={{ background: statusDot(s.status) }}
+            />
+            <span className="w-[92px] text-right text-xs text-subtle-foreground">
+              {statusLabel(s.status)}
+            </span>
+          </Link>
+        ))
+      ) : (
+        <Empty>
+          No sources connected yet. Add files, PostgreSQL, MySQL or SQLite from the Sources page;
+          every new source is profiled so you can see what&apos;s inside.
+        </Empty>
+      )}
+    </Panel>
+  );
+}
+
 function MemberRow({ member }: { member: ProjectMember }) {
   return (
     <div className="flex items-center gap-2.5">
@@ -144,11 +186,13 @@ function Panel({
   id,
   title,
   count,
+  action,
   children,
 }: {
   id?: string;
   title: ReactNode;
   count?: number;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const headingId = id ? `${id}-h` : undefined;
@@ -158,10 +202,15 @@ function Panel({
       aria-labelledby={headingId}
       className="flex scroll-mt-8 flex-col gap-3 rounded-xl border border-border bg-card px-5 py-[18px]"
     >
-      <h2 id={headingId} className="text-[15px] font-semibold">
-        {title}{" "}
-        {count !== undefined && <span className="font-normal text-subtle-foreground">{count}</span>}
-      </h2>
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 id={headingId} className="text-[15px] font-semibold">
+          {title}{" "}
+          {count !== undefined && (
+            <span className="font-normal text-subtle-foreground">{count}</span>
+          )}
+        </h2>
+        {action}
+      </div>
       {children}
     </section>
   );

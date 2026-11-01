@@ -18,6 +18,25 @@ export function updatedLabel(iso: string, now: Date = new Date()): string {
   return `Updated ${MONTHS[then.getMonth()]} ${then.getDate()}${sameYear ? "" : `, ${then.getFullYear()}`}`;
 }
 
+/** "now", "4 min ago", "3 h ago", "Oct 28" — for "last sync" columns. */
+export function timeAgo(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return "—";
+  const label = updatedLabel(iso, now).replace(/^Updated /, "");
+  return label === "just now" ? "now" : label;
+}
+
+export function formatCount(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+/** 1,050,060 → "1.05M"; 18,200 → "18.2K". */
+export function compactCount(n: number): string {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(
+    n,
+  );
+}
+
 export function capitalize(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }

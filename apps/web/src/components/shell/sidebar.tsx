@@ -79,7 +79,7 @@ export function Sidebar() {
           <NavItem
             href={`/projects/${projectId}`}
             icon={<LayoutGrid className="size-[18px]" />}
-            active
+            active={pathname === `/projects/${projectId}`}
           >
             Overview
           </NavItem>
@@ -87,8 +87,9 @@ export function Sidebar() {
             Sheets
           </NavItem>
           <NavItem
-            href={`/projects/${projectId}#sources`}
+            href={`/projects/${projectId}/sources`}
             icon={<Database className="size-[18px]" />}
+            active={pathname.startsWith(`/projects/${projectId}/sources`)}
           >
             Sources
           </NavItem>

@@ -155,6 +155,56 @@ test("interactions: no main-thread task over 50 ms; prefetched project switch", 
   expect(switched).toBeLessThan(500);
 });
 
+test("data socket: regrouping the 1M-row demo table re-renders within the cross-filter budget", async ({
+  page,
+}) => {
+  await signInDemo(page);
+  await page.getByRole("link", { name: /Revenue Analytics.*sources/s }).click();
+  await page.locator("nav").getByRole("link", { name: "Sources" }).click();
+  await page
+    .getByRole("row", { name: /Acme Retail orders/ })
+    .getByRole("link")
+    .click();
+  await page
+    .getByRole("navigation", { name: "Tables" })
+    .getByRole("button", { name: /orders/ })
+    .click();
+  await expect(page.getByTestId("query-timings")).toContainText("100 rows");
+  await page.getByLabel("Show").selectOption("summary");
+  await page.getByLabel("Measure").selectOption("sum");
+  await page.getByLabel("of").selectOption("amount");
+
+  // Each change sends a new batch (superseding the last) and renders the Arrow result.
+  const steps: [string, string][] = [
+    ["region", "3 rows"],
+    ["category", "8 rows"],
+    ["channel", "2 rows"],
+    ["status", "3 rows"],
+    ["store_id", "60 rows"],
+  ];
+  const latencies: number[] = [];
+  const gateway: number[] = [];
+  for (const [column, rows] of steps) {
+    const started = await page.evaluate(() => performance.now());
+    await page.getByLabel("Group by").selectOption(column);
+    await expect(page.getByTestId("query-timings")).toContainText(rows);
+    await expect(page.getByTestId("query-timings")).not.toHaveClass(/opacity-50/);
+    latencies.push((await page.evaluate(() => performance.now())) - started);
+    const text = await page.getByTestId("query-timings").innerText();
+    gateway.push(Number(/gateway\s+([\d.]+) ms/.exec(text)?.[1] ?? NaN));
+  }
+  latencies.sort((a, b) => a - b);
+  gateway.sort((a, b) => a - b);
+  const median = latencies[Math.floor(latencies.length / 2)] ?? NaN;
+  Object.assign(results, {
+    regroup_1m_rows_median_ms: median,
+    regroup_1m_rows_max_ms: latencies.at(-1) ?? NaN,
+    regroup_1m_rows_gateway_median_ms: gateway[Math.floor(gateway.length / 2)] ?? NaN,
+  });
+  // §3: cross-filter → visuals updated < 150 ms including network.
+  expect(median).toBeLessThan(150);
+});
+
 test.afterAll(() => {
   const dir = path.resolve(__dirname, "../../../perf-results");
   fs.mkdirSync(dir, { recursive: true });

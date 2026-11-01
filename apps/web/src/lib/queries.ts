@@ -2,6 +2,9 @@
 
 import type {
   AuthProvidersResponse,
+  CreateDatabaseSourceRequest,
+  SourceDetail,
+  SourceListResponse,
   CreateProjectRequest,
   LoginRequest,
   MeResponse,
@@ -19,6 +22,9 @@ export const queryKeys = {
   providers: ["auth", "providers"] as const,
   projects: ["projects"] as const,
   project: (id: string) => ["projects", id] as const,
+  sources: (projectId: string) => ["projects", projectId, "sources"] as const,
+  source: (projectId: string, sourceId: string) =>
+    ["projects", projectId, "sources", sourceId] as const,
 };
 
 /** Don't retry what retrying can't fix. */
@@ -118,4 +124,87 @@ export function useCreateProject() {
       void client.invalidateQueries({ queryKey: queryKeys.projects });
     },
   });
+}
+
+export function useSources(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.sources(projectId),
+    queryFn: ({ signal }) =>
+      api<SourceListResponse>(`/api/projects/${encodeURIComponent(projectId)}/sources`, { signal }),
+    select: (data) => data.sources,
+    retry: retryUnlessClientError,
+  });
+}
+
+export function useSource(projectId: string, sourceId: string) {
+  return useQuery({
+    queryKey: queryKeys.source(projectId, sourceId),
+    queryFn: ({ signal }) =>
+      api<SourceDetail>(
+        `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}`,
+        { signal },
+      ),
+    retry: retryUnlessClientError,
+  });
+}
+
+/** After a source changes: refresh its detail, the source list, and project counts. */
+function sourceChanged(client: QueryClient, projectId: string, detail?: SourceDetail) {
+  if (detail) client.setQueryData(queryKeys.source(projectId, detail.source.id), detail);
+  void client.invalidateQueries({ queryKey: queryKeys.sources(projectId) });
+  void client.invalidateQueries({ queryKey: queryKeys.projects, exact: true });
+  void client.invalidateQueries({ queryKey: queryKeys.project(projectId), exact: true });
+}
+
+export function useCreateDatabaseSource(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateDatabaseSourceRequest) =>
+      api<SourceDetail>(`/api/projects/${encodeURIComponent(projectId)}/sources`, {
+        method: "POST",
+        body,
+      }),
+    onSuccess: (detail) => sourceChanged(client, projectId, detail),
+  });
+}
+
+export function useRefreshSource(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceId: string) =>
+      api<SourceDetail>(
+        `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/refresh`,
+        { method: "POST" },
+      ),
+    onSuccess: (detail) => sourceChanged(client, projectId, detail),
+  });
+}
+
+export function useDeleteSource(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceId: string) =>
+      api<void>(
+        `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => sourceChanged(client, projectId),
+  });
+}
+
+export function useProfileTable(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (tableId: string) =>
+      api<SourceDetail>(
+        `/api/projects/${encodeURIComponent(projectId)}/tables/${encodeURIComponent(tableId)}/profile`,
+        { method: "POST" },
+      ),
+    onSuccess: (detail) => sourceChanged(client, projectId, detail),
+  });
+}
+
+export function useSourcesInvalidation(projectId: string) {
+  const client = useQueryClient();
+  return (detail?: SourceDetail) => sourceChanged(client, projectId, detail);
 }
