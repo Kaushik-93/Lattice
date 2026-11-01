@@ -113,6 +113,27 @@ function saveHistory(sheetId: string, history: PersistedHistory): void {
   }
 }
 
+const EDIT_MODE = "lattice:edit-mode";
+
+/** Edit mode is global (ADR 0007): on for every sheet in this tab, across reloads, until turned
+ * off. */
+function editModeOn(): boolean {
+  try {
+    return sessionStorage.getItem(EDIT_MODE) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function rememberEditMode(on: boolean) {
+  try {
+    if (on) sessionStorage.setItem(EDIT_MODE, "on");
+    else sessionStorage.removeItem(EDIT_MODE);
+  } catch {
+    // Unavailable storage: edit mode just won't carry over.
+  }
+}
+
 export function createSheetStore(projectId: string, sheet: Sheet, canEdit: boolean): SheetStore {
   const restored = canEdit ? loadHistory(sheet) : null;
   const store = createStore<SheetState & SheetActions>()((set, get) => {
@@ -126,7 +147,7 @@ export function createSheetStore(projectId: string, sheet: Sheet, canEdit: boole
       future: restored?.future ?? [],
       saveState: "saved",
       saveError: null,
-      editing: false,
+      editing: canEdit && editModeOn(),
       selectedVisual: null,
       filterValues: {},
       selections: [],
@@ -178,6 +199,7 @@ export function createSheetStore(projectId: string, sheet: Sheet, canEdit: boole
         });
       },
       setEditing(editing) {
+        rememberEditMode(editing);
         set({ editing, selectedVisual: editing ? get().selectedVisual : null });
       },
       selectVisual(id) {

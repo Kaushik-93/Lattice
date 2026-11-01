@@ -20,11 +20,13 @@ import { useId, useState, type ReactNode } from "react";
 
 import { dataClient } from "@/lib/data/client";
 import { metricsFor, useProjectModel } from "@/lib/knowledge/api";
+import { placeField, type Field as FieldRef, type Slot } from "@/lib/sheets/fields";
 import { PRESET_LABEL, presetRange } from "@/lib/sheets/fiscal";
 import { useProjectTables, type CatalogTable } from "@/lib/queries";
 import { newId, type SheetDoc } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
 
+import { DropSlot, FieldList, slotLabel } from "./field-list";
 import { useSheetEnv, useSheetState } from "./sheet-env";
 
 export const KINDS: [VisualKind, string][] = [
@@ -184,6 +186,22 @@ function Field({ label, children }: { label: string; children: (id: string) => R
 const control =
   "h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none";
 
+type EditorTab = "data" | "format" | "filters";
+
+let lastTab: EditorTab = "data";
+
+/** The drawer's tab, kept while moving between visuals (as in other BI tools). */
+function useEditorTab(): [EditorTab, (t: EditorTab) => void] {
+  const [tab, setTab] = useState<EditorTab>(lastTab);
+  return [
+    tab,
+    (t) => {
+      lastTab = t;
+      setTab(t);
+    },
+  ];
+}
+
 /** The right-hand panel while editing: the selected visual's fields, or the sheet's settings. */
 export function EditorPanel() {
   const { store, target } = useSheetEnv();
@@ -238,6 +256,7 @@ function VisualFields({
   model: ProjectModelResponse | undefined;
 }) {
   const { store } = useSheetEnv();
+  const [tab, setTab] = useEditorTab();
   const spec = visual.spec;
   const table = tables.find((t) => t.id === spec.table_id);
   const columns = table?.columns ?? [];
@@ -310,373 +329,417 @@ function VisualFields({
   );
 
   const usesX = spec.kind !== "kpi" && !(spec.kind === "table" && !spec.x);
+  const metrics = metricsFor(model, spec.table_id);
+  const place = (slot: Slot, field: FieldRef) =>
+    update(`Add ${field.kind === "metric" ? field.title : field.name}`, (s) =>
+      placeField(s, slot, field, (name) => {
+        const c = columns.find((x) => x.name === name);
+        return binWidth(c?.min ?? null, c?.max ?? null);
+      }),
+    );
+  const tabs: [EditorTab, string][] = [
+    ["data", "Data"],
+    ["format", "Format"],
+    ["filters", "Filters"],
+  ];
   return (
     <div className="grid gap-4">
-      <Field label="Title">
-        {(id) => (
-          <input
-            id={id}
-            className={control}
-            value={spec.title}
-            maxLength={120}
-            onChange={(e) =>
-              update(
-                "Rename visual",
-                (s) => ({ ...s, title: e.target.value }),
-                `title:${visual.id}`,
-              )
-            }
-          />
-        )}
-      </Field>
-      <fieldset className="grid gap-1.5">
-        <legend className="mb-1.5 text-xs font-semibold text-secondary-foreground">Type</legend>
-        <div className="grid grid-cols-3 gap-1.5">
-          {KINDS.map(([kind, label]) => (
-            <button
-              key={kind}
-              type="button"
-              aria-pressed={spec.kind === kind}
-              onClick={() => update("Change visual type", (s) => adaptSpec(s, kind, table))}
-              className={cn(
-                "h-8 rounded-md border text-xs font-medium",
-                spec.kind === kind
-                  ? "border-primary bg-accent text-accent-foreground"
-                  : "border-border hover:border-input",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      <Field label="Table">
-        {(id) => (
-          <select
-            id={id}
-            className={control}
-            value={spec.table_id}
-            onChange={(e) => {
-              const t = tables.find((x) => x.id === e.target.value);
-              if (t)
-                update("Change table", () =>
-                  adaptSpec({ ...defaultSpec(t), title: spec.title }, spec.kind, t),
-                );
-            }}
+      <div
+        role="tablist"
+        aria-label="Visual settings"
+        className="grid grid-cols-3 rounded-lg bg-secondary p-1"
+      >
+        {tabs.map(([t, label]) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "h-8 rounded-md text-[13px] font-medium",
+              tab === t ? "bg-card shadow-sm" : "text-secondary-foreground hover:text-foreground",
+            )}
           >
-            {tables.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.source} · {t.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
-
-      {spec.kind === "table" && (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={!!spec.x || spec.measures.length > 0}
-            onChange={(e) =>
-              update("Change table mode", (s) =>
-                e.target.checked
-                  ? {
-                      ...s,
-                      x: defaultSpec(table ?? tables[0]!).x,
-                      measures: [{ column: null, agg: "count" }],
-                      columns: [],
-                    }
-                  : {
-                      ...s,
-                      x: undefined,
-                      series: undefined,
-                      measures: [],
-                      columns: columns.slice(0, 8).map((c) => c.name),
-                    },
-              )
-            }
-          />
-          Summarise (group and aggregate)
-        </label>
-      )}
-
-      {spec.kind === "histogram" ? (
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "data" && (
         <>
-          <Field label="Values">
-            {(id) => (
-              <select
-                id={id}
-                className={control}
-                value={spec.x?.column ?? ""}
-                onChange={(e) => {
-                  const c = columns.find((x) => x.name === e.target.value);
-                  if (c)
-                    update("Change histogram column", (s) => ({
-                      ...s,
-                      x: { column: c.name, bucket: null, bin: binWidth(c.min, c.max) },
-                    }));
-                }}
-              >
-                {columnOptions(isNumericType)}
-              </select>
-            )}
-          </Field>
-          <Field label="Bin width">
+          <Field label="Title">
             {(id) => (
               <input
                 id={id}
-                type="number"
-                min="0"
-                step="any"
                 className={control}
-                value={spec.x?.bin ?? 1}
-                onChange={(e) => {
-                  const w = Number(e.target.value);
-                  if (w > 0 && spec.x)
-                    update(
-                      "Change bin width",
-                      (s) => ({ ...s, x: { ...s.x!, bin: w } }),
-                      `bin:${visual.id}`,
-                    );
-                }}
-              />
-            )}
-          </Field>
-        </>
-      ) : (
-        usesX &&
-        dimField(
-          spec.kind === "scatter"
-            ? "X axis"
-            : spec.kind === "pivot"
-              ? "Rows"
-              : spec.kind === "slicer"
-                ? "Values of"
-                : spec.kind === "pie" || spec.kind === "donut"
-                  ? "Slices"
-                  : "Group by",
-          spec.x,
-          (d) => update("Change axis", (s) => ({ ...s, x: d, drill: [] })),
-          false,
-        )
-      )}
-
-      {spec.kind === "scatter" && (
-        <Field label="Y axis">
-          {(id) => (
-            <select
-              id={id}
-              className={control}
-              value={spec.columns[0] ?? ""}
-              onChange={(e) =>
-                update("Change y axis", (s) => ({ ...s, columns: [e.target.value] }))
-              }
-            >
-              {columnOptions(isNumericType)}
-            </select>
-          )}
-        </Field>
-      )}
-
-      {SPLIT_KINDS.has(spec.kind) &&
-        usesX &&
-        dimField(
-          spec.kind === "scatter"
-            ? "Colour by"
-            : spec.kind === "pivot"
-              ? "Columns"
-              : spec.kind === "heatmap"
-                ? "Y axis"
-                : "Split by",
-          spec.series,
-          (d) => update("Change split", (s) => ({ ...s, series: d })),
-          spec.kind !== "heatmap" && spec.kind !== "pivot",
-        )}
-
-      {spec.kind !== "scatter" &&
-        spec.kind !== "slicer" &&
-        spec.kind !== "histogram" &&
-        !(spec.kind === "table" && !spec.x) && (
-          <MeasuresField
-            measures={spec.measures}
-            single={SINGLE_MEASURE.has(spec.kind)}
-            columns={columns}
-            metrics={metricsFor(model, spec.table_id)}
-            onChange={(measures) => update("Change measures", (s) => ({ ...s, measures }))}
-          />
-        )}
-
-      {spec.kind === "table" && !spec.x && spec.measures.length === 0 && (
-        <fieldset className="grid gap-1">
-          <legend className="mb-1 text-xs font-semibold text-secondary-foreground">Columns</legend>
-          {columns.map((c) => (
-            <label key={c.name} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={spec.columns.length === 0 || spec.columns.includes(c.name)}
-                onChange={(e) =>
-                  update("Change columns", (s) => {
-                    const current = s.columns.length ? s.columns : columns.map((x) => x.name);
-                    const next = e.target.checked
-                      ? [...current, c.name]
-                      : current.filter((x) => x !== c.name);
-                    return {
-                      ...s,
-                      columns: columns.map((x) => x.name).filter((x) => next.includes(x)),
-                    };
-                  })
-                }
-              />
-              {c.name}
-            </label>
-          ))}
-        </fieldset>
-      )}
-
-      {spec.kind === "kpi" && (
-        <>
-          <Field label="Compare over the sheet's date range on">
-            {(id) => (
-              <select
-                id={id}
-                className={control}
-                value={spec.options.compare ?? ""}
-                onChange={(e) =>
-                  update("Change comparison", (s) => ({
-                    ...s,
-                    options: { ...s.options, compare: e.target.value || undefined },
-                  }))
-                }
-              >
-                <option value="">No comparison</option>
-                {columnOptions(isTemporalType)}
-              </select>
-            )}
-          </Field>
-          {spec.options.compare && (
-            <Field label="Compared with">
-              {(id) => (
-                <select
-                  id={id}
-                  className={control}
-                  value={spec.options.compare_to ?? "previous_period"}
-                  onChange={(e) =>
-                    update("Change comparison", (s) => ({
-                      ...s,
-                      options: { ...s.options, compare_to: e.target.value as CompareTo },
-                    }))
-                  }
-                >
-                  <option value="previous_period">The previous period</option>
-                  <option value="previous_year">The same period last year</option>
-                </select>
-              )}
-            </Field>
-          )}
-        </>
-      )}
-
-      {["bar", "column", "area"].includes(spec.kind) && spec.series && (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={spec.options.stacked}
-            onChange={(e) =>
-              update("Toggle stacking", (s) => ({
-                ...s,
-                options: { ...s.options, stacked: e.target.checked },
-              }))
-            }
-          />
-          Stack series
-        </label>
-      )}
-
-      {spec.kind !== "kpi" && spec.kind !== "scatter" && spec.kind !== "slicer" && (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Sort">
-            {(id) => (
-              <select
-                id={id}
-                className={control}
-                value={spec.sort ? `${spec.sort.by}:${spec.sort.dir}` : ""}
-                onChange={(e) => {
-                  const [by, dir] = e.target.value.split(":");
-                  update("Change sort", (s) => ({
-                    ...s,
-                    sort: by ? { by: by as "x" | "value", dir: dir as "asc" | "desc" } : undefined,
-                  }));
-                }}
-              >
-                <option value="">Default</option>
-                <option value="value:desc">Largest first</option>
-                <option value="value:asc">Smallest first</option>
-                <option value="x:asc">A → Z / oldest</option>
-                <option value="x:desc">Z → A / newest</option>
-              </select>
-            )}
-          </Field>
-          <Field label="Max rows">
-            {(id) => (
-              <input
-                id={id}
-                type="number"
-                min="1"
-                className={control}
-                placeholder="Default"
-                value={spec.limit ?? ""}
+                value={spec.title}
+                maxLength={120}
                 onChange={(e) =>
                   update(
-                    "Change row limit",
-                    (s) => ({
-                      ...s,
-                      limit: e.target.value ? Math.max(1, Number(e.target.value)) : undefined,
-                    }),
-                    `limit:${visual.id}`,
+                    "Rename visual",
+                    (s) => ({ ...s, title: e.target.value }),
+                    `title:${visual.id}`,
                   )
                 }
               />
             )}
           </Field>
-        </div>
-      )}
+          <fieldset className="grid gap-1.5">
+            <legend className="mb-1.5 text-xs font-semibold text-secondary-foreground">Type</legend>
+            <div className="grid grid-cols-3 gap-1.5">
+              {KINDS.map(([kind, label]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={spec.kind === kind}
+                  onClick={() => update("Change visual type", (s) => adaptSpec(s, kind, table))}
+                  className={cn(
+                    "h-8 rounded-md border text-xs font-medium",
+                    spec.kind === kind
+                      ? "border-primary bg-accent text-accent-foreground"
+                      : "border-border hover:border-input",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <Field label="Table">
+            {(id) => (
+              <select
+                id={id}
+                className={control}
+                value={spec.table_id}
+                onChange={(e) => {
+                  const t = tables.find((x) => x.id === e.target.value);
+                  if (t)
+                    update("Change table", () =>
+                      adaptSpec({ ...defaultSpec(t), title: spec.title }, spec.kind, t),
+                    );
+                }}
+              >
+                {tables.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.source} · {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          <FieldList spec={spec} columns={columns} metrics={metrics} onPlace={place} />
 
-      {spec.kind !== "scatter" && spec.kind !== "slicer" && (
-        <Field label="Number format">
-          {(id) => (
-            <select
-              id={id}
-              className={control}
-              value={spec.options.format ?? ""}
-              onChange={(e) =>
-                update("Change format", (s) => ({
-                  ...s,
-                  options: {
-                    ...s.options,
-                    format: (e.target.value || undefined) as ValueFormat | undefined,
-                  },
-                }))
-              }
-            >
-              <option value="">Automatic</option>
-              <option value="number">Number</option>
-              <option value="currency">Currency</option>
-              <option value="percent">Percent</option>
-            </select>
+          {spec.kind === "table" && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!spec.x || spec.measures.length > 0}
+                onChange={(e) =>
+                  update("Change table mode", (s) =>
+                    e.target.checked
+                      ? {
+                          ...s,
+                          x: defaultSpec(table ?? tables[0]!).x,
+                          measures: [{ column: null, agg: "count" }],
+                          columns: [],
+                        }
+                      : {
+                          ...s,
+                          x: undefined,
+                          series: undefined,
+                          measures: [],
+                          columns: columns.slice(0, 8).map((c) => c.name),
+                        },
+                  )
+                }
+              />
+              Summarise (group and aggregate)
+            </label>
           )}
-        </Field>
-      )}
 
-      {["bar", "column", "line", "area", "pie", "donut"].includes(spec.kind) &&
-        spec.x &&
-        !spec.x.bucket && (
-          <DrillField
-            drill={spec.drill}
-            columns={columns.map((c) => c.name).filter((c) => c !== spec.x?.column)}
-            onChange={(drill) => update("Change drill path", (s) => ({ ...s, drill }))}
-          />
-        )}
+          {spec.kind === "histogram" ? (
+            <>
+              <Field label="Values">
+                {(id) => (
+                  <select
+                    id={id}
+                    className={control}
+                    value={spec.x?.column ?? ""}
+                    onChange={(e) => {
+                      const c = columns.find((x) => x.name === e.target.value);
+                      if (c)
+                        update("Change histogram column", (s) => ({
+                          ...s,
+                          x: { column: c.name, bucket: null, bin: binWidth(c.min, c.max) },
+                        }));
+                    }}
+                  >
+                    {columnOptions(isNumericType)}
+                  </select>
+                )}
+              </Field>
+              <Field label="Bin width">
+                {(id) => (
+                  <input
+                    id={id}
+                    type="number"
+                    min="0"
+                    step="any"
+                    className={control}
+                    value={spec.x?.bin ?? 1}
+                    onChange={(e) => {
+                      const w = Number(e.target.value);
+                      if (w > 0 && spec.x)
+                        update(
+                          "Change bin width",
+                          (s) => ({ ...s, x: { ...s.x!, bin: w } }),
+                          `bin:${visual.id}`,
+                        );
+                    }}
+                  />
+                )}
+              </Field>
+            </>
+          ) : (
+            usesX && (
+              <DropSlot spec={spec} slot="axis" onPlace={place}>
+                {dimField(
+                  slotLabel(spec, "axis"),
+                  spec.x,
+                  (d) => update("Change axis", (s) => ({ ...s, x: d, drill: [] })),
+                  false,
+                )}
+              </DropSlot>
+            )
+          )}
+
+          {spec.kind === "scatter" && (
+            <Field label="Y axis">
+              {(id) => (
+                <select
+                  id={id}
+                  className={control}
+                  value={spec.columns[0] ?? ""}
+                  onChange={(e) =>
+                    update("Change y axis", (s) => ({ ...s, columns: [e.target.value] }))
+                  }
+                >
+                  {columnOptions(isNumericType)}
+                </select>
+              )}
+            </Field>
+          )}
+
+          {SPLIT_KINDS.has(spec.kind) && usesX && (
+            <DropSlot spec={spec} slot="legend" onPlace={place}>
+              {dimField(
+                spec.kind === "scatter" ? "Colour by" : slotLabel(spec, "legend"),
+                spec.series,
+                (d) => update("Change split", (s) => ({ ...s, series: d })),
+                spec.kind !== "heatmap" && spec.kind !== "pivot",
+              )}
+            </DropSlot>
+          )}
+
+          {spec.kind !== "scatter" &&
+            spec.kind !== "slicer" &&
+            spec.kind !== "histogram" &&
+            !(spec.kind === "table" && !spec.x) && (
+              <DropSlot spec={spec} slot="values" onPlace={place}>
+                <MeasuresField
+                  measures={spec.measures}
+                  single={SINGLE_MEASURE.has(spec.kind)}
+                  columns={columns}
+                  metrics={metrics}
+                  onChange={(measures) => update("Change measures", (s) => ({ ...s, measures }))}
+                />
+              </DropSlot>
+            )}
+
+          {spec.kind === "table" && !spec.x && spec.measures.length === 0 && (
+            <fieldset className="grid gap-1">
+              <legend className="mb-1 text-xs font-semibold text-secondary-foreground">
+                Columns
+              </legend>
+              {columns.map((c) => (
+                <label key={c.name} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={spec.columns.length === 0 || spec.columns.includes(c.name)}
+                    onChange={(e) =>
+                      update("Change columns", (s) => {
+                        const current = s.columns.length ? s.columns : columns.map((x) => x.name);
+                        const next = e.target.checked
+                          ? [...current, c.name]
+                          : current.filter((x) => x !== c.name);
+                        return {
+                          ...s,
+                          columns: columns.map((x) => x.name).filter((x) => next.includes(x)),
+                        };
+                      })
+                    }
+                  />
+                  {c.name}
+                </label>
+              ))}
+            </fieldset>
+          )}
+
+          {spec.kind === "kpi" && (
+            <>
+              <Field label="Compare over the sheet's date range on">
+                {(id) => (
+                  <select
+                    id={id}
+                    className={control}
+                    value={spec.options.compare ?? ""}
+                    onChange={(e) =>
+                      update("Change comparison", (s) => ({
+                        ...s,
+                        options: { ...s.options, compare: e.target.value || undefined },
+                      }))
+                    }
+                  >
+                    <option value="">No comparison</option>
+                    {columnOptions(isTemporalType)}
+                  </select>
+                )}
+              </Field>
+              {spec.options.compare && (
+                <Field label="Compared with">
+                  {(id) => (
+                    <select
+                      id={id}
+                      className={control}
+                      value={spec.options.compare_to ?? "previous_period"}
+                      onChange={(e) =>
+                        update("Change comparison", (s) => ({
+                          ...s,
+                          options: { ...s.options, compare_to: e.target.value as CompareTo },
+                        }))
+                      }
+                    >
+                      <option value="previous_period">The previous period</option>
+                      <option value="previous_year">The same period last year</option>
+                    </select>
+                  )}
+                </Field>
+              )}
+            </>
+          )}
+
+          {["bar", "column", "line", "area", "pie", "donut"].includes(spec.kind) &&
+            spec.x &&
+            !spec.x.bucket && (
+              <DropSlot spec={spec} slot="drill" onPlace={place}>
+                <DrillField
+                  drill={spec.drill}
+                  columns={columns.map((c) => c.name).filter((c) => c !== spec.x?.column)}
+                  onChange={(drill) => update("Change drill path", (s) => ({ ...s, drill }))}
+                />
+              </DropSlot>
+            )}
+        </>
+      )}
+      {tab === "format" && (
+        <>
+          {spec.kind !== "scatter" && spec.kind !== "slicer" && (
+            <Field label="Number format">
+              {(id) => (
+                <select
+                  id={id}
+                  className={control}
+                  value={spec.options.format ?? ""}
+                  onChange={(e) =>
+                    update("Change format", (s) => ({
+                      ...s,
+                      options: {
+                        ...s.options,
+                        format: (e.target.value || undefined) as ValueFormat | undefined,
+                      },
+                    }))
+                  }
+                >
+                  <option value="">Automatic</option>
+                  <option value="number">Number</option>
+                  <option value="currency">Currency</option>
+                  <option value="percent">Percent</option>
+                </select>
+              )}
+            </Field>
+          )}
+
+          {["bar", "column", "area"].includes(spec.kind) && spec.series && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={spec.options.stacked}
+                onChange={(e) =>
+                  update("Toggle stacking", (s) => ({
+                    ...s,
+                    options: { ...s.options, stacked: e.target.checked },
+                  }))
+                }
+              />
+              Stack series
+            </label>
+          )}
+        </>
+      )}
+      {tab === "filters" && (
+        <>
+          {spec.kind !== "kpi" && spec.kind !== "scatter" && spec.kind !== "slicer" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Sort">
+                {(id) => (
+                  <select
+                    id={id}
+                    className={control}
+                    value={spec.sort ? `${spec.sort.by}:${spec.sort.dir}` : ""}
+                    onChange={(e) => {
+                      const [by, dir] = e.target.value.split(":");
+                      update("Change sort", (s) => ({
+                        ...s,
+                        sort: by
+                          ? { by: by as "x" | "value", dir: dir as "asc" | "desc" }
+                          : undefined,
+                      }));
+                    }}
+                  >
+                    <option value="">Default</option>
+                    <option value="value:desc">Largest first</option>
+                    <option value="value:asc">Smallest first</option>
+                    <option value="x:asc">A → Z / oldest</option>
+                    <option value="x:desc">Z → A / newest</option>
+                  </select>
+                )}
+              </Field>
+              <Field label="Max rows">
+                {(id) => (
+                  <input
+                    id={id}
+                    type="number"
+                    min="1"
+                    className={control}
+                    placeholder="Default"
+                    value={spec.limit ?? ""}
+                    onChange={(e) =>
+                      update(
+                        "Change row limit",
+                        (s) => ({
+                          ...s,
+                          limit: e.target.value ? Math.max(1, Number(e.target.value)) : undefined,
+                        }),
+                        `limit:${visual.id}`,
+                      )
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

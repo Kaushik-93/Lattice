@@ -421,7 +421,7 @@ function EditControls() {
   if (!editing) {
     return (
       <Button variant="outline" className="h-10" onClick={() => store.getState().setEditing(true)}>
-        <Pencil className="size-4" /> Edit
+        <Pencil className="size-4" /> Edit mode
       </Button>
     );
   }
@@ -470,7 +470,12 @@ function EditControls() {
       >
         <Plus className="size-4" /> Add visual
       </Button>
-      <Button className="h-10" onClick={() => store.getState().setEditing(false)}>
+      <Button
+        className="h-10"
+        aria-pressed
+        title="Leave edit mode"
+        onClick={() => store.getState().setEditing(false)}
+      >
         Done
       </Button>
     </div>

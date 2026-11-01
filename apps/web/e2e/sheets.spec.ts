@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function signInDemo(page: Page) {
   await page.goto("/login");
@@ -24,6 +24,20 @@ async function settled(page: Page, before = 0) {
       timeout: 30_000,
     })
     .toBeGreaterThan(before);
+}
+
+/** HTML5 drag and drop with real pointer steps, measured after both ends are scrolled into view
+ * (the drawer scrolls, so measuring first would aim at the wrong place). */
+async function drag(page: Page, source: Locator, target: Locator) {
+  await target.scrollIntoViewIfNeeded();
+  await source.scrollIntoViewIfNeeded();
+  const [a, b] = [await source.boundingBox(), await target.boundingBox()];
+  if (!a || !b) throw new Error("drag ends aren't visible");
+  await page.mouse.move(a.x + 20, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + 40, a.y + a.height / 2, { steps: 5 });
+  await page.mouse.move(b.x + 40, b.y + 20, { steps: 10 });
+  await page.mouse.up();
 }
 
 const settleCount = async (page: Page) =>
@@ -237,6 +251,69 @@ test("fiscal periods, comparisons and ranges to date", async ({ page }) => {
     await page.getByRole("button", { name: /order_date range/ }).click();
     await expect(page.getByRole("button", { name: "Fiscal quarter to date" })).toBeVisible();
     await page.keyboard.press("Escape");
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+  }
+});
+
+test("edit mode stays on across sheets; the drawer edits a visual by tab and by dragging fields", async ({
+  page,
+}) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  await page.getByRole("button", { name: "Edit mode" }).click();
+  const done = page.getByRole("button", { name: "Done", exact: true });
+  await expect(done).toBeVisible();
+  // Global: still on in another sheet, and after a reload.
+  await page.getByRole("tab", { name: /Regional ops/ }).click();
+  await expect(page.getByRole("heading", { name: "Regional ops", level: 1 })).toBeVisible();
+  await expect(done).toBeVisible();
+  await page.reload();
+  await expect(done).toBeVisible();
+
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  try {
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    const editor = page.getByRole("complementary", { name: "Editor" });
+    await editor.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await editor.getByLabel("Title").fill("Dragged");
+    await editor.getByRole("button", { name: "Column", exact: true }).click();
+
+    // Drag a metric onto the values, and a column onto the axis.
+    const fields = editor.getByRole("region", { name: "Fields" });
+    await drag(
+      page,
+      fields.locator('[data-field="Net revenue"]'),
+      editor.locator('[data-slot="values"]'),
+    );
+    await expect(editor.getByLabel("Metric").locator("option:checked")).toHaveText("Net revenue");
+    await drag(
+      page,
+      fields.locator('[data-field="category"]'),
+      editor.locator('[data-slot="axis"]'),
+    );
+    await expect(editor.getByLabel("Group by", { exact: true })).toHaveValue("category");
+    // The same from the keyboard: a field's button adds it to a slot.
+    await fields.getByLabel("Add channel to…").click();
+    await page.getByRole("menuitem", { name: "Split by" }).click();
+    await expect(editor.getByLabel("Split by", { exact: true })).toHaveValue("channel");
+    await expect(
+      page.getByRole("region", { name: "Dragged" }).locator("canvas").first(),
+    ).toBeVisible();
+
+    // Tabs: formatting and filters live on their own.
+    await editor.getByRole("tab", { name: "Format" }).click();
+    await expect(editor.getByLabel("Number format")).toBeVisible();
+    await editor.getByRole("tab", { name: "Filters" }).click();
+    await expect(editor.getByLabel("Sort")).toBeVisible();
+    // Clicking the canvas shows the sheet's settings.
+    const canvas = page.getByTestId("sheet-canvas");
+    const box = await canvas.boundingBox();
+    await canvas.click({ position: { x: (box?.width ?? 800) - 10, y: 10 } });
+    await expect(editor.getByRole("heading", { name: "Sheet", exact: true })).toBeVisible();
   } finally {
     await page.getByRole("button", { name: "Sheet actions" }).click();
     await page.getByRole("menuitem", { name: "Delete this sheet" }).click();

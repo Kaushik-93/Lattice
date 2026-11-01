@@ -61,7 +61,20 @@ export function SheetGrid() {
 
   if (visuals.length === 0) return null;
   return (
-    <div ref={containerRef} className="min-w-0">
+    <div
+      ref={containerRef}
+      className="min-w-0"
+      data-testid="sheet-canvas"
+      onClick={
+        editing
+          ? (e) => {
+              // Clicking the canvas rather than a visual shows the sheet's settings.
+              if (!(e.target as HTMLElement).closest("[data-visual]"))
+                store.getState().selectVisual(null);
+            }
+          : undefined
+      }
+    >
       {mounted && width < STACK_BELOW ? (
         <div className="flex flex-col gap-4">
           {[...visuals].sort(byPosition).map((v) => (
