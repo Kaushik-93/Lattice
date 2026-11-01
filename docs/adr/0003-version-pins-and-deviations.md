@@ -41,6 +41,12 @@ Added in phase 1 (checked 2026-11-01):
   sheet listing), aes-gcm 0.10, insta 1 (planner SQL snapshots), tokio-tungstenite 0.29 (tests).
 - Web: apache-arrow 21.2, @tanstack/react-table 8.21, @tanstack/react-virtual 3.14.
 
+Added in phase 2 (checked 2026-11-01; ADR 0005):
+
+- Web: echarts 6.1.0 (tree-shaken, canvas), react-grid-layout 2.3.0 (v2 API), regl 2.1.1.
+- WebAssembly: wasm-bindgen 0.2.129 and wasm-bindgen-cli 0.2.129 (0.2.130 was two days old),
+  Rust 1.99.1 with the `wasm32-unknown-unknown` target (`packages/wasm/rust-toolchain.toml`).
+
 ## Deviations from SPEC.md
 
 1. **MinIO → RustFS.** MinIO stopped publishing container images (`minio/minio` no longer exists

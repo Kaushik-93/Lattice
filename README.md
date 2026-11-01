@@ -5,11 +5,13 @@ sources, ask questions in plain language, get interactive charts — built on a 
 human-approved business-logic layer, so every number is traceable to a definition someone signed
 off.
 
-Status: **phase 1 (engine & connectors)** — on top of the phase 0 skeleton (auth, workspaces,
-projects, app shell, gateway, AI service stub, contracts, CI): a DuckDB query engine per project,
-file uploads (CSV, JSON, Parquet, Excel, SQLite) and live Postgres/MySQL sources, introspection and
-profiling, a data explorer streaming Arrow results over WebSocket, a Redis result cache and
-end-to-end cancellation. See [docs/phases/PHASE_1_REPORT.md](docs/phases/PHASE_1_REPORT.md).
+Status: **phase 2 (visuals & sheets)**. Projects hold sheets of visuals — KPIs, line, area, bar,
+pie, scatter (WebGL, a million points), heatmap, histogram, pivot, slicer and tables — on a
+drag-and-resize grid, with sheet filters, cross-filtering, drill-down, undo/redo and autosave;
+sheets can be shared by link. Underneath: a DuckDB engine per project, file and database sources,
+Arrow results over WebSocket, a Redis result cache. The business-logic layer and the AI copilot
+(phases 3–4) come next. Reports: [phase 1](docs/phases/PHASE_1_REPORT.md),
+[phase 2](docs/phases/PHASE_2_REPORT.md).
 
 ## Run it
 
@@ -22,8 +24,10 @@ docker compose up --build        # or: make up
 Open http://localhost:3000 and sign in as **demo@lattice.dev / lattice-demo** (seeded "Acme Retail"
 workspace), or create your own workspace. Press **Ctrl+Shift+P** for the performance overlay.
 
-The "Revenue Analytics" project comes with a generated retail dataset (1M orders) under
-**Sources**; open a table to group, filter and aggregate it. To add a live Postgres source, the
+The "Revenue Analytics" project comes with a generated retail dataset (1M orders) and three
+sheets: **Revenue Review** (screen 06 of the design), **Regional ops** and **Order explorer**
+(every order on a WebGL scatter plot). Click a bar to cross-filter, double-click to drill, and
+press **Edit** to change visuals. Under **Sources**, open a table to explore it. To add a live Postgres source, the
 stack ships a demo database: host `postgres`, port `5432`, database `acme_ops`, user `acme_reader`,
 password `acme-reader`. `make seed-bench` adds a 50M-row project for benchmarking.
 
@@ -56,10 +60,11 @@ make help        # everything else
 ```
 apps/web/              Next.js 16 app (App Router, Tailwind 4, shadcn/ui)
 services/gateway/      Rust: Axum API + WebSocket, auth, RBAC, DuckDB engine, connectors,
-                       query planner, result cache, gRPC tool server             (crates/, bin/gateway)
+                       query planner, visual compiler, sheets, result cache, gRPC (crates/, bin/gateway)
 services/ai/           Python: gRPC AI service + probe/metrics HTTP              (uv)
 packages/proto/        gRPC contracts (gateway ⇄ AI)
 packages/shared-types/ TypeScript generated from the gateway's Rust types (ts-rs)
+packages/wasm/         Rust → WebAssembly for the browser's compute worker (prebuilt pkg/)
 infra/docker/          Postgres 18 + Apache AGE + pgvector image and init scripts
 docs/                  ADRs, phase reports, the frontend design
 scripts/               codegen, dev loop, benchmarks
@@ -71,5 +76,6 @@ scripts/               codegen, dev loop, benchmarks
 - [ADR 0001](docs/adr/0001-stack.md) stack, service boundaries, performance budgets ·
   [ADR 0002](docs/adr/0002-workspaces-roles-and-logic-scope.md) workspaces, roles, logic scope ·
   [ADR 0003](docs/adr/0003-version-pins-and-deviations.md) version pins and deviations ·
-  [ADR 0004](docs/adr/0004-engine-and-connectors.md) query engine, extracts and connectors
+  [ADR 0004](docs/adr/0004-engine-and-connectors.md) query engine, extracts and connectors ·
+  [ADR 0005](docs/adr/0005-visuals-sheets-and-sharing.md) visuals, sheets and sharing
 - [docs/design](docs/design/) — the UI source of truth

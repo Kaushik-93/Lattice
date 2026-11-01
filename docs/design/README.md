@@ -8,11 +8,11 @@ self-unpacking bundle of eight 1440-px-wide screens.
 | 01 | Sign in | Phase 0 (`/login`, plus `/signup` in the same style) |
 | 02 | All projects | Phase 0 (`/projects`, `/projects?filter=shared`) |
 | 03 | Project overview | Phase 0 shell (`/projects/[id]`): header, members; sheets, sources and the agent digest show empty states until their phases |
-| 04 | Project sources | Phase 1 |
+| 04 | Project sources | Phase 1 (`/projects/[id]/sources`) |
 | 05 | Business logic (organization-wide) | Phase 3 (`/logic` is a placeholder) |
-| 06 | Sheet + AI copilot | Phases 2 and 4 |
-| 07 | Share project or sheet | Phase 2 |
-| 08 | Shared sheet (view access) | Phase 2 |
+| 06 | Sheet + AI copilot | Phase 2 sheet (`/projects/[id]/sheets/[sheetId]`); the copilot aside is phase 4 — in edit mode that panel is the visual editor |
+| 07 | Share project or sheet | Phase 2 (`/projects/[id]/sharing`) |
+| 08 | Shared sheet (view access) | Phase 2 (`/s/[token]`); the "Ask about this sheet" card is phase 4 |
 
 ## Tokens
 
