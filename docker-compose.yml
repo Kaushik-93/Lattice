@@ -43,6 +43,14 @@ services:
       # Plain-http localhost: Safari drops Secure cookies on http. Production must leave this true.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SEED_DEMO: ${SEED_DEMO:-true}
+      DEMO_ORDER_ROWS: ${DEMO_ORDER_ROWS:-1000000}
+      # Encrypts stored source credentials. This default is for local development only;
+      # set your own (openssl rand -base64 32) anywhere else.
+      LATTICE_SECRET_KEY: ${LATTICE_SECRET_KEY:-FFcJLROL+t7RwWNo2E3Ks5dSmpC4Detu+wZazB06rNo=}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lattice}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lattice-dev-secret}
+      S3_BUCKET: lattice
+      ENGINE_MEMORY_LIMIT: ${ENGINE_MEMORY_LIMIT:-2GB}
       LOG_FORMAT: json
       RUST_LOG: ${RUST_LOG:-info}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -60,7 +68,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-      s3: { condition: service_healthy }
+      s3-init: { condition: service_completed_successfully }
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "/usr/local/bin/gateway", "healthcheck"]
@@ -116,6 +124,24 @@ services:
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+
+  # Creates the bucket the gateway stores uploads and extracts in (S3 CreateBucket, signed with
+  # curl's built-in SigV4). 409 means it already exists.
+  s3-init:
+    image: rustfs/rustfs:1.0.3
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT --aws-sigv4 'aws:amz:us-east-1:s3'
+        --user "$$S3_ACCESS_KEY:$$S3_SECRET_KEY" http://s3:9000/lattice);
+        echo "create bucket: HTTP $$code"; [ "$$code" = 200 ] || [ "$$code" = 409 ]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lattice}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lattice-dev-secret}
+    depends_on:
+      s3: { condition: service_healthy }
+    restart: "no"
 
   # Dev-only OpenID Connect provider for trying SSO locally:
   #   OIDC_PROVIDERS=sso (plus the OIDC_SSO_* values in .env.example) docker compose --profile sso up

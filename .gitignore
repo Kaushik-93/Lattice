@@ -23,6 +23,9 @@ __pycache__/
 .env.*
 !.env.example
 
+# Local data written by `make dev` (DuckDB project files, uploads, extensions)
+.data/
+
 # Benchmark and timing artefacts produced by scripts/
 perf-results/
 

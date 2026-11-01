@@ -11,6 +11,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # The containerised app services would hold ports 3000/8080; infra stays up.
 docker compose stop web ai gateway >/dev/null 2>&1 || true
 docker compose up -d --wait postgres redis s3
+docker compose up s3-init >/dev/null
 
 export DATABASE_URL="postgres://lattice:lattice@localhost:${POSTGRES_PORT:-5433}/lattice"
 export REDIS_URL="redis://localhost:${REDIS_PORT:-6379}"
@@ -20,6 +21,11 @@ export TOOLS_GRPC_ADDR="127.0.0.1:50052"
 export GATEWAY_TOOLS_URL="localhost:50052"
 export NEXT_PUBLIC_GATEWAY_URL="http://localhost:8080"
 export SEED_DEMO="${SEED_DEMO:-true}"
+export DATA_DIR="${DATA_DIR:-$PWD/.data}"
+export S3_ACCESS_KEY="${S3_ACCESS_KEY:-lattice}"
+export S3_SECRET_KEY="${S3_SECRET_KEY:-lattice-dev-secret}"
+# Local-development key only (same default as docker-compose.yml).
+export LATTICE_SECRET_KEY="${LATTICE_SECRET_KEY:-FFcJLROL+t7RwWNo2E3Ks5dSmpC4Detu+wZazB06rNo=}"
 export COOKIE_SECURE="${COOKIE_SECURE:-false}"
 export RUST_LOG="${RUST_LOG:-info}"
 
