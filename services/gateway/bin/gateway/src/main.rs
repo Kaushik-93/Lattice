@@ -3,7 +3,9 @@
 //! ```text
 //! gateway [serve]      run the HTTP/WebSocket API and the gRPC tool server (default)
 //! gateway migrate      apply database migrations and exit
-//! gateway seed         create the demo workspace if it doesn't exist and exit
+//! gateway seed         create the demo workspace (with its dataset) if it doesn't exist and exit
+//! gateway seed-bench N add a "Benchmark" project with N generated orders (default 50M)
+//! gateway install-extensions  download DuckDB extensions into DUCKDB_EXTENSION_DIR (image build)
 //! gateway healthcheck  exit 0 if the local gateway answers /healthz (container probes)
 //! ```
 
@@ -28,22 +30,55 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some("seed") => {
-            let config = Config::from_env()?;
-            let pool = db::connect_pool(&config.database_url, 2).await?;
-            let created = seed::seed_demo(&pool).await?;
-            println!(
-                "{}",
-                if created {
-                    "demo workspace created"
-                } else {
-                    "demo workspace already exists"
+            let state = offline_state().await?;
+            match seed::seed_demo(&state.pool).await? {
+                Some(demo) => {
+                    seed::seed_demo_data(&state, &demo, state.config.demo_order_rows).await?;
+                    println!("demo workspace created");
                 }
+                None => println!("demo workspace already exists"),
+            }
+            Ok(())
+        }
+        Some("seed-bench") => {
+            let rows = std::env::args()
+                .nth(2)
+                .map(|n| n.replace('_', "").parse())
+                .transpose()?
+                .unwrap_or(50_000_000);
+            let state = offline_state().await?;
+            let started = std::time::Instant::now();
+            let project = seed::seed_bench(&state, rows).await?;
+            println!(
+                "benchmark project {project} with {rows} orders in {:.1}s",
+                started.elapsed().as_secs_f64()
+            );
+            Ok(())
+        }
+        Some("install-extensions") => {
+            let config = Config::from_env_or_defaults();
+            let engine = lattice_engine::Engine::new(lattice_engine::EngineConfig {
+                data_dir: config.data_dir.clone(),
+                extension_dir: config.engine.extension_dir.clone(),
+                memory_limit: "256MB".into(),
+                threads: Some(1),
+                pool_size: 1,
+                max_open_projects: 1,
+                query_timeout: Duration::from_secs(60),
+            });
+            engine.install_extensions().await?;
+            println!(
+                "installed {:?} into {}",
+                lattice_engine::EXTENSIONS,
+                config.engine.extension_dir.display()
             );
             Ok(())
         }
         Some("healthcheck") => healthcheck().await,
         Some(other) => {
-            bail!("unknown command {other:?}; expected serve, migrate, seed or healthcheck")
+            bail!(
+                "unknown command {other:?}; expected serve, migrate, seed, seed-bench, install-extensions or healthcheck"
+            )
         }
     }
 }
@@ -62,17 +97,32 @@ async fn serve() -> anyhow::Result<()> {
     let pool = db::connect_pool(&config.database_url, config.database_max_connections)
         .await
         .context("connecting to Postgres")?;
-    if config.seed_demo && seed::seed_demo(&pool).await? {
-        tracing::info!(
-            email = seed::DEMO_EMAIL,
-            password = seed::DEMO_PASSWORD,
-            "seeded demo workspace"
-        );
-    }
+    let seeded = if config.seed_demo {
+        seed::seed_demo(&pool).await?
+    } else {
+        None
+    };
 
     let bind_addr = config.bind_addr;
     let tools_addr = config.tools_addr;
     let state = AppState::new(config, pool)?;
+    // A no-op in the container image (extensions are baked in); downloads them in local dev.
+    state
+        .engine
+        .install_extensions()
+        .await
+        .context("installing DuckDB extensions")?;
+    if let Some(demo) = seeded {
+        let started = std::time::Instant::now();
+        seed::seed_demo_data(&state, &demo, state.config.demo_order_rows).await?;
+        tracing::info!(
+            email = seed::DEMO_EMAIL,
+            password = seed::DEMO_PASSWORD,
+            orders = state.config.demo_order_rows,
+            seconds = started.elapsed().as_secs_f64(),
+            "seeded demo workspace"
+        );
+    }
     spawn_session_purge(state.clone());
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -111,6 +161,16 @@ fn spawn_session_purge(state: AppState) {
             }
         }
     });
+}
+
+/// State for one-shot commands: migrations applied, extensions installed, no servers.
+async fn offline_state() -> anyhow::Result<AppState> {
+    let config = Config::from_env()?;
+    db::run_migrations(&config.database_url).await?;
+    let pool = db::connect_pool(&config.database_url, 4).await?;
+    let state = AppState::new(config, pool)?;
+    state.engine.install_extensions().await?;
+    Ok(state)
 }
 
 async fn wait_for(mut rx: watch::Receiver<bool>) {

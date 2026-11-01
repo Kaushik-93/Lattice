@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.table_id, c.name, c.data_type, c.nullable, c.profile\n         FROM source_columns c JOIN source_tables t ON t.id = c.table_id\n         WHERE t.source_id = $1 ORDER BY c.table_id, c.ordinal",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "table_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "data_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "nullable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "profile",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "5234568303db7599dd658cc5eccefc29e0fbf1493595602b764824876b0e0ea3"
+}

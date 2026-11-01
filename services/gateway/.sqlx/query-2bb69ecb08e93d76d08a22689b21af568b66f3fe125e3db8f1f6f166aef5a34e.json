@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO source_columns (table_id, ordinal, name, data_type, nullable)\n             SELECT $1, * FROM UNNEST($2::int[], $3::text[], $4::text[], $5::bool[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2bb69ecb08e93d76d08a22689b21af568b66f3fe125e3db8f1f6f166aef5a34e"
+}

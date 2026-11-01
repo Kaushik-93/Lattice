@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM source_tables WHERE table_name = 'orders'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "56e2427a4ddc28de4bf29c0a45e7e0c7b42cf6c3692951924651a79070d3aafc"
+}

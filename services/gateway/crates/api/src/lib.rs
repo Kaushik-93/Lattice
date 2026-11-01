@@ -7,8 +7,10 @@ pub mod db;
 pub mod dto;
 pub mod error;
 pub mod middleware;
+pub mod query;
 pub mod routes;
 pub mod seed;
+pub mod sources;
 pub mod state;
 pub mod ws;
 
@@ -16,6 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::routing::{get, post};
 use tower::ServiceBuilder;
@@ -33,7 +36,7 @@ pub use config::Config;
 pub use state::{AppState, GATEWAY_VERSION, StartupError};
 
 use crate::auth::{oidc, password};
-use crate::routes::{health, projects};
+use crate::routes::{health, projects, sources as source_routes};
 
 pub fn router(state: AppState) -> Router {
     // Brute-force brake on credential endpoints: bursts of 20, then one attempt per second per IP.
@@ -66,7 +69,39 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/oidc/{provider}/start", get(oidc::start))
         .route("/auth/oidc/{provider}/callback", get(oidc::callback))
         .route("/projects", get(projects::list).post(projects::create))
-        .route("/projects/{id}", get(projects::get));
+        .route("/projects/{id}", get(projects::get))
+        .route(
+            "/projects/{id}/sources",
+            get(source_routes::list).post(source_routes::create_database),
+        )
+        .route(
+            "/projects/{id}/sources/{source_id}",
+            get(source_routes::get).delete(source_routes::delete),
+        )
+        .route(
+            "/projects/{id}/sources/{source_id}/refresh",
+            post(source_routes::refresh),
+        )
+        .route(
+            "/projects/{id}/tables/{table_id}/profile",
+            post(source_routes::profile),
+        )
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ));
+
+    // Uploads stream up to 200 MB and load them into DuckDB: their own size and time limits.
+    let uploads = Router::new()
+        .route("/projects/{id}/sources/upload", post(source_routes::upload))
+        .layer(DefaultBodyLimit::max(
+            usize::try_from(lattice_connectors::MAX_UPLOAD_BYTES).unwrap_or(usize::MAX)
+                + 1024 * 1024,
+        ))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(600),
+        ));
 
     let web_origin = HeaderValue::from_str(&state.config.web_origin)
         .unwrap_or_else(|_| HeaderValue::from_static("http://localhost:3000"));
@@ -93,16 +128,12 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/ws", get(ws::upgrade))
-        .nest("/api", api)
+        .nest("/api", api.merge(uploads))
         .layer(
             ServiceBuilder::new()
                 .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
                 .layer(TraceLayer::new_for_http())
                 .layer(PropagateRequestIdLayer::x_request_id())
-                .layer(TimeoutLayer::with_status_code(
-                    StatusCode::REQUEST_TIMEOUT,
-                    Duration::from_secs(30),
-                ))
                 .layer(cors)
                 // Lets the web app read Server-Timing via the Resource Timing API cross-origin.
                 .layer(SetResponseHeaderLayer::overriding(

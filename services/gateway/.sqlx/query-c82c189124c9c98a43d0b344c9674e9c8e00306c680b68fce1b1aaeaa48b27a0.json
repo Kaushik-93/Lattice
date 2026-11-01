@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id, m.workspace_id FROM users u JOIN workspace_members m ON m.user_id = u.id\n         WHERE u.email = $1 ORDER BY m.created_at LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c82c189124c9c98a43d0b344c9674e9c8e00306c680b68fce1b1aaeaa48b27a0"
+}

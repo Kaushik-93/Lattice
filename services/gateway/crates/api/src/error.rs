@@ -26,6 +26,11 @@ pub enum ApiError {
     Conflict(String),
     #[error("cross-origin request rejected")]
     BadOrigin,
+    /// The request was well-formed but its content can't be used (a bad file, a refused connection).
+    #[error("{0}")]
+    Unprocessable(String),
+    #[error("that file is larger than the {0} MB limit")]
+    PayloadTooLarge(u64),
     #[error("internal error")]
     Internal(#[source] BoxError),
 }
@@ -44,6 +49,8 @@ impl ApiError {
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::BadOrigin => (StatusCode::FORBIDDEN, "bad_origin"),
+            ApiError::Unprocessable(_) => (StatusCode::UNPROCESSABLE_ENTITY, "unprocessable"),
+            ApiError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
             ApiError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }
@@ -76,6 +83,40 @@ impl From<IdentityError> for ApiError {
     }
 }
 
+impl From<lattice_engine::EngineError> for ApiError {
+    fn from(err: lattice_engine::EngineError) -> Self {
+        use lattice_engine::EngineError as E;
+        match err {
+            E::Query(m) | E::Spreadsheet(m) => ApiError::Unprocessable(m),
+            E::Timeout(d) => {
+                ApiError::Unprocessable(format!("That took longer than {}s.", d.as_secs()))
+            }
+            E::Busy => {
+                ApiError::Unprocessable("The project is busy; try again in a moment.".into())
+            }
+            other => ApiError::internal(other),
+        }
+    }
+}
+
+impl From<lattice_planner::PlanError> for ApiError {
+    fn from(err: lattice_planner::PlanError) -> Self {
+        ApiError::BadRequest(err.to_string())
+    }
+}
+
+impl From<lattice_connectors::ConnectorError> for ApiError {
+    fn from(err: lattice_connectors::ConnectorError) -> Self {
+        ApiError::BadRequest(err.to_string())
+    }
+}
+
+impl From<axum::extract::multipart::MultipartError> for ApiError {
+    fn from(err: axum::extract::multipart::MultipartError) -> Self {
+        ApiError::BadRequest(format!("upload failed: {}", err.body_text()))
+    }
+}
+
 macro_rules! internal_from {
     ($($ty:ty),* $(,)?) => {$(
         impl From<$ty> for ApiError {
@@ -93,4 +134,8 @@ internal_from!(
     tokio::task::JoinError,
     serde_json::Error,
     lattice_security::password::PasswordError,
+    lattice_catalog::CatalogError,
+    lattice_security::CryptoError,
+    std::io::Error,
+    object_store::Error,
 );

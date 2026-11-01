@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM source_tables WHERE source_id = $1 AND NOT (id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0060a863bf8ef5ef91fd73cd1a8a36b445cdcdaa005f34dbe4be71484c30e8b3"
+}

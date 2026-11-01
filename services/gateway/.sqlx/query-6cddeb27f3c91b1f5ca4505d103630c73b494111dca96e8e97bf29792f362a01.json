@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, kind, name, config, secret FROM sources\n         WHERE project_id = $1 AND kind IN ('sqlite', 'postgres', 'mysql') ORDER BY created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "secret",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "6cddeb27f3c91b1f5ca4505d103630c73b494111dca96e8e97bf29792f362a01"
+}

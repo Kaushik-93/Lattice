@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM source_columns WHERE table_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "93145564513307cdf32bc0a7371126a85a5d2a31d9d47f3eb5dbf49d6cd3ddf2"
+}

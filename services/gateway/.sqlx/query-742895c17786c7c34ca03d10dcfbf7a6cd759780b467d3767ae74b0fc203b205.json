@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sources SET status = $2, status_detail = $3,\n             synced_at = CASE WHEN $2 = 'ready' THEN now() ELSE synced_at END,\n             data_version = CASE WHEN $2 = 'ready' THEN data_version + 1 ELSE data_version END\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "742895c17786c7c34ca03d10dcfbf7a6cd759780b467d3767ae74b0fc203b205"
+}

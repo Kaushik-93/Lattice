@@ -36,8 +36,7 @@ pub struct ProjectSummary {
     pub member_count: i64,
     /// Initials of up to three members, for the avatar stack.
     pub member_initials: Vec<String>,
-    // Counts the cards show; they stay zero until sources (phase 1), sheets (phase 2)
-    // and business logic (phase 3) exist.
+    // Counts the cards show; sheets (phase 2) and definitions (phase 3) stay zero until those exist.
     #[ts(type = "number")]
     pub source_count: i64,
     #[ts(type = "number")]
@@ -86,6 +85,7 @@ pub async fn list_for_user(
                   me.role AS my_role,
                   (p.created_by IS NOT DISTINCT FROM $2) AS "owned_by_me!",
                   (SELECT count(*) FROM project_members m WHERE m.project_id = p.id) AS "member_count!",
+                  (SELECT count(*) FROM sources s WHERE s.project_id = p.id) AS "source_count!",
                   ARRAY(SELECT u.display_name FROM project_members m JOIN users u ON u.id = m.user_id
                         WHERE m.project_id = p.id ORDER BY m.created_at LIMIT 3) AS "member_names!"
            FROM projects p
@@ -110,7 +110,7 @@ pub async fn list_for_user(
                 updated_at: r.updated_at,
                 member_count: r.member_count,
                 member_initials: r.member_names.iter().map(|n| initials(n)).collect(),
-                source_count: 0,
+                source_count: r.source_count,
                 sheet_count: 0,
                 definition_count: 0,
             })

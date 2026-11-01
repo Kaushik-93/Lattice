@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sessions SET workspace_id = $1 WHERE user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fdfe26e3863bb74aa363004443095260c489e31d0c475ba0a0d7d4b4cb0ac300"
+}

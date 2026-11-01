@@ -38,11 +38,50 @@ pub struct Config {
     pub log_json: bool,
     pub otlp_endpoint: Option<String>,
     pub oidc_providers: Vec<OidcProviderConfig>,
+    /// Base64 AES-256 key that encrypts source credentials. Database sources are refused without it.
+    pub secret_key: Option<String>,
+    pub s3_access_key: Option<String>,
+    pub s3_secret_key: Option<String>,
+    pub s3_bucket: String,
+    pub s3_region: String,
+    pub engine: EngineSettings,
+    /// Orders in the generated demo dataset.
+    pub demo_order_rows: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct EngineSettings {
+    pub extension_dir: PathBuf,
+    pub memory_limit: String,
+    pub threads: Option<u32>,
+    pub pool_size: usize,
+    pub max_open_projects: usize,
+    pub query_timeout_secs: u64,
+    pub cache_ttl_secs: u64,
+    pub cache_max_bytes: usize,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::from_lookup(|key| std::env::var(key).ok())
+    }
+
+    /// For commands that need only paths (`install-extensions` at image build time, where no
+    /// database or Redis is configured): required variables get placeholders.
+    pub fn from_env_or_defaults() -> Self {
+        Self::from_lookup(|key| match key {
+            "DATABASE_URL" | "REDIS_URL" => {
+                std::env::var(key).ok().or_else(|| Some("unused://".into()))
+            }
+            _ => std::env::var(key).ok(),
+        })
+        .unwrap_or_else(|_| {
+            Self::from_lookup(|key| match key {
+                "DATABASE_URL" | "REDIS_URL" => Some("unused://".into()),
+                _ => None,
+            })
+            .unwrap_or_else(|_| unreachable!("defaults always parse"))
+        })
     }
 
     /// Builds the config from any key/value source, so tests don't touch process env.
@@ -61,6 +100,7 @@ impl Config {
             .transpose()?
             .unwrap_or_default();
 
+        let data_dir: PathBuf = get("DATA_DIR").unwrap_or_else(|| "./data".into()).into();
         Ok(Self {
             bind_addr: parse(&get, "BIND_ADDR", "0.0.0.0:8080")?,
             tools_addr: parse(&get, "TOOLS_GRPC_ADDR", "0.0.0.0:50052")?,
@@ -69,7 +109,7 @@ impl Config {
             redis_url: required("REDIS_URL")?,
             ai_grpc_url: get("AI_GRPC_URL").unwrap_or_else(|| "http://127.0.0.1:50051".into()),
             s3_endpoint: get("S3_ENDPOINT").map(|s| s.trim_end_matches('/').to_owned()),
-            data_dir: get("DATA_DIR").unwrap_or_else(|| "./data".into()).into(),
+            data_dir: data_dir.clone(),
             public_url: get("PUBLIC_URL")
                 .unwrap_or_else(|| "http://localhost:8080".into())
                 .trim_end_matches('/')
@@ -83,6 +123,32 @@ impl Config {
             log_json: get("LOG_FORMAT").is_some_and(|f| f.eq_ignore_ascii_case("json")),
             otlp_endpoint: get("OTEL_EXPORTER_OTLP_ENDPOINT"),
             oidc_providers,
+            secret_key: get("LATTICE_SECRET_KEY"),
+            s3_access_key: get("S3_ACCESS_KEY"),
+            s3_secret_key: get("S3_SECRET_KEY"),
+            s3_bucket: get("S3_BUCKET").unwrap_or_else(|| "lattice".into()),
+            s3_region: get("S3_REGION").unwrap_or_else(|| "us-east-1".into()),
+            engine: EngineSettings {
+                extension_dir: get("DUCKDB_EXTENSION_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| data_dir.join("duckdb-extensions")),
+                memory_limit: get("ENGINE_MEMORY_LIMIT").unwrap_or_else(|| "2GB".into()),
+                threads: get("ENGINE_THREADS")
+                    .map(|t| {
+                        t.parse()
+                            .map_err(|e: std::num::ParseIntError| ConfigError::Invalid {
+                                name: "ENGINE_THREADS".into(),
+                                reason: e.to_string(),
+                            })
+                    })
+                    .transpose()?,
+                pool_size: parse(&get, "ENGINE_POOL_SIZE", "8")?,
+                max_open_projects: parse(&get, "ENGINE_MAX_OPEN_PROJECTS", "16")?,
+                query_timeout_secs: parse(&get, "QUERY_TIMEOUT_SECS", "30")?,
+                cache_ttl_secs: parse(&get, "RESULT_CACHE_TTL_SECS", "600")?,
+                cache_max_bytes: parse(&get, "RESULT_CACHE_MAX_BYTES", "8388608")?,
+            },
+            demo_order_rows: parse(&get, "DEMO_ORDER_ROWS", "1000000")?,
         })
     }
 }

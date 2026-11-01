@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.source_id, s.kind, t.schema_name, t.table_name, s.data_version\n         FROM source_tables t JOIN sources s ON s.id = t.source_id\n         WHERE t.id = $1 AND s.project_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "schema_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "table_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "data_version",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "49b98ef4458ed9a8ec3ad6c61768887284859b3aac752cb9451f6d98f1aacec7"
+}

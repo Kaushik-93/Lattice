@@ -374,8 +374,8 @@ async fn cross_site_writes_are_refused(pool: PgPool) {
 
 #[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
 async fn demo_seed_is_idempotent_and_signs_in(pool: PgPool) {
-    assert!(lattice_api::seed::seed_demo(&pool).await.unwrap());
-    assert!(!lattice_api::seed::seed_demo(&pool).await.unwrap());
+    assert!(lattice_api::seed::seed_demo(&pool).await.unwrap().is_some());
+    assert!(lattice_api::seed::seed_demo(&pool).await.unwrap().is_none());
 
     let app = app(pool);
     let login = call(
