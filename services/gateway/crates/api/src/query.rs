@@ -6,12 +6,12 @@ use std::time::{Duration, Instant};
 use lattice_cache::CacheKey;
 use lattice_catalog as catalog;
 use lattice_engine::{EngineError, ipc};
-use lattice_planner::{ColumnInfo, TableQuery, TableSchema, compile};
+use lattice_planner::{ColumnInfo, CompiledQuery, TableQuery, TableSchema, compile};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::dto::{QueryTimings, ResultHeader};
+use crate::dto::{QueryTimings, ResultHeader, UnapprovedLogic};
 use crate::sources::{project_db, table_reference};
 use crate::state::AppState;
 
@@ -27,7 +27,7 @@ pub enum QueryFailure {
 }
 
 impl QueryFailure {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
         QueryFailure::Failed {
             code,
             message: message.into(),
@@ -108,20 +108,61 @@ pub async fn execute(
     cancel: &CancellationToken,
     started: Instant,
 ) -> Result<QueryOutcome, QueryFailure> {
-    let mut timings = QueryTimings::default();
     let t = Instant::now();
     let compiled = compile(query, &table.schema)
         .map_err(|e| QueryFailure::new("invalid_query", e.to_string()))?;
-    timings.compile_ms = ms(t.elapsed());
+    let prepared = Prepared {
+        compiled,
+        data_versions: vec![(query.table_id, table.data_version)],
+        logic: String::new(),
+        unapproved: Vec::new(),
+        compile_ms: ms(t.elapsed()),
+    };
+    run_prepared(
+        state, project_id, batch_id, query_id, prepared, cancel, started,
+    )
+    .await
+}
 
+/// A compiled query and what its result depends on.
+pub struct Prepared {
+    pub compiled: CompiledQuery,
+    pub data_versions: Vec<(Uuid, i64)>,
+    /// Business-logic definitions used, `note_id@version` (see `CacheKey::logic`).
+    pub logic: String,
+    pub unapproved: Vec<UnapprovedLogic>,
+    pub compile_ms: f64,
+}
+
+/// Consults the result cache, executes on a miss and frames the result.
+pub async fn run_prepared(
+    state: &AppState,
+    project_id: Uuid,
+    batch_id: u32,
+    query_id: String,
+    prepared: Prepared,
+    cancel: &CancellationToken,
+    started: Instant,
+) -> Result<QueryOutcome, QueryFailure> {
+    let Prepared {
+        compiled,
+        data_versions,
+        logic,
+        unapproved,
+        compile_ms,
+    } = prepared;
+    let mut timings = QueryTimings {
+        compile_ms,
+        ..QueryTimings::default()
+    };
     let params = format!("{:?}", compiled.params);
     let key = CacheKey {
         project_id,
         sql: &compiled.sql,
         params: &params,
-        data_version: table.data_version,
-        logic_version: 0, // phase 3: business-logic version
-        rls_context: "",  // phase 5: row-level-security context
+        data_versions: &data_versions,
+        logic: &logic,
+        rls_context: "", // phase 5: row-level-security context
     }
     .render();
 
@@ -140,6 +181,7 @@ pub async fn execute(
                 columns: compiled.columns,
                 fingerprint: fingerprint(&key),
                 timings,
+                unapproved,
             },
             ipc,
         });
@@ -185,6 +227,7 @@ pub async fn execute(
             columns: compiled.columns,
             fingerprint,
             timings,
+            unapproved,
         },
         ipc,
     })
@@ -256,6 +299,7 @@ mod tests {
             columns: vec![],
             fingerprint: "0123abcd".into(),
             timings: QueryTimings::default(),
+            unapproved: vec![],
         };
         let bytes = frame(&header, b"ARROW");
         let (decoded, ipc) = unframe(&bytes).unwrap();

@@ -33,6 +33,7 @@ use crate::dto::{ClientMessage, ServerMessage};
 use crate::error::ApiError;
 use crate::middleware::is_allowed_origin;
 use crate::query::{self, QueryFailure};
+use crate::semantic::{self, LoadedModel};
 use crate::sheets::{open_link, shared_context};
 use crate::state::{AppState, GATEWAY_VERSION};
 
@@ -401,10 +402,17 @@ async fn run_batch(
 ) {
     let started = Instant::now();
     let context = std::sync::Arc::new(batch.context);
+    // Loaded once per batch, by the first visual that uses metrics.
+    let model: std::sync::Arc<ModelCell> = std::sync::Arc::default();
     let mut tasks = JoinSet::new();
     for job in batch.jobs {
-        let (state, tx, cancel, context) =
-            (state.clone(), tx.clone(), cancel.clone(), context.clone());
+        let (state, tx, cancel, context, model) = (
+            state.clone(),
+            tx.clone(),
+            cancel.clone(),
+            context.clone(),
+            model.clone(),
+        );
         let project_id = batch.project_id;
         tasks.spawn(async move {
             match job {
@@ -421,7 +429,7 @@ async fn run_batch(
                 } => {
                     run_visual(
                         &state, &tx, project_id, batch_id, id, &spec, &drill, offset, &context,
-                        &cancel,
+                        &model, &cancel,
                     )
                     .await;
                 }
@@ -439,7 +447,10 @@ async fn run_batch(
         .await;
 }
 
-/// Compiles a visual against its table and runs its queries concurrently.
+type ModelCell = tokio::sync::OnceCell<Result<std::sync::Arc<LoadedModel>, String>>;
+
+/// Compiles a visual against its table and runs its queries concurrently. Queries over metrics
+/// compile through the project's semantic model instead.
 #[allow(clippy::too_many_arguments)]
 async fn run_visual(
     state: &AppState,
@@ -451,6 +462,7 @@ async fn run_visual(
     drill: &[Scalar],
     offset: Option<u32>,
     context: &SheetContext,
+    model: &ModelCell,
     cancel: &CancellationToken,
 ) {
     let started = Instant::now();
@@ -469,21 +481,65 @@ async fn run_visual(
             return send(tx, batch_id, &query_id, Err(failure)).await;
         }
     };
+    let loaded = if parts.iter().any(|p| semantic::governed(&p.query)) {
+        let cell = model
+            .get_or_init(|| async {
+                semantic::load_for_project(state, project_id)
+                    .await
+                    .map(std::sync::Arc::new)
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+        match cell {
+            Ok(m) => Some(m.clone()),
+            Err(message) => {
+                let failure = QueryFailure::Failed {
+                    code: "internal",
+                    message: message.clone(),
+                };
+                return send(tx, batch_id, &query_id, Err(failure)).await;
+            }
+        }
+    } else {
+        None
+    };
+    let today = chrono::Utc::now().date_naive();
     join_all(parts.into_iter().map(|part| {
         let part_id = format!("{query_id}{}", part.part.suffix());
-        let table = &table;
+        let (table, loaded) = (&table, &loaded);
         async move {
-            let result = query::execute(
-                state,
-                project_id,
-                batch_id,
-                part_id.clone(),
-                table,
-                &part.query,
-                cancel,
-                started,
-            )
-            .await;
+            let result = match loaded {
+                Some(m) if semantic::governed(&part.query) => {
+                    match semantic::prepare(m, &part, today) {
+                        Ok(prepared) => {
+                            query::run_prepared(
+                                state,
+                                project_id,
+                                batch_id,
+                                part_id.clone(),
+                                prepared,
+                                cancel,
+                                started,
+                            )
+                            .await
+                        }
+                        Err(failure) => Err(failure),
+                    }
+                }
+                _ => {
+                    query::execute(
+                        state,
+                        project_id,
+                        batch_id,
+                        part_id.clone(),
+                        table,
+                        &part.query,
+                        cancel,
+                        started,
+                    )
+                    .await
+                }
+            };
             send(tx, batch_id, &part_id, result).await;
         }
     }))

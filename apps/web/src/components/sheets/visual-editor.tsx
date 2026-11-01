@@ -4,6 +4,8 @@ import type {
   Aggregation,
   Dimension,
   Measure,
+  ModelMetric,
+  ProjectModelResponse,
   SheetFilterDef,
   TimeBucket,
   ValueFormat,
@@ -15,6 +17,7 @@ import { Plus, Trash2, X } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { dataClient } from "@/lib/data/client";
+import { metricsFor, useProjectModel } from "@/lib/knowledge/api";
 import { useProjectTables, type CatalogTable } from "@/lib/queries";
 import { newId, type SheetDoc } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
@@ -165,6 +168,7 @@ export function EditorPanel() {
   const { store, target } = useSheetEnv();
   const projectId = target.kind === "member" ? target.projectId : "";
   const { tables } = useProjectTables(projectId);
+  const model = useProjectModel(projectId || null).data;
   const selected = useSheetState((s) => s.doc.visuals.find((v) => v.id === s.selectedVisual));
   const close = () => store.getState().setEditing(false);
   return (
@@ -194,7 +198,7 @@ export function EditorPanel() {
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {selected ? (
-          <VisualFields key={selected.id} visual={selected} tables={tables} />
+          <VisualFields key={selected.id} visual={selected} tables={tables} model={model} />
         ) : (
           <SheetFields tables={tables} projectId={projectId} />
         )}
@@ -203,7 +207,15 @@ export function EditorPanel() {
   );
 }
 
-function VisualFields({ visual, tables }: { visual: Visual; tables: CatalogTable[] }) {
+function VisualFields({
+  visual,
+  tables,
+  model,
+}: {
+  visual: Visual;
+  tables: CatalogTable[];
+  model: ProjectModelResponse | undefined;
+}) {
   const { store } = useSheetEnv();
   const spec = visual.spec;
   const table = tables.find((t) => t.id === spec.table_id);
@@ -469,6 +481,7 @@ function VisualFields({ visual, tables }: { visual: Visual; tables: CatalogTable
             measures={spec.measures}
             single={SINGLE_MEASURE.has(spec.kind)}
             columns={columns}
+            metrics={metricsFor(model, spec.table_id)}
             onChange={(measures) => update("Change measures", (s) => ({ ...s, measures }))}
           />
         )}
@@ -625,89 +638,153 @@ function VisualFields({ visual, tables }: { visual: Visual; tables: CatalogTable
   );
 }
 
+const RAW = "raw";
+
+/** A metric as a measure (`agg` is ignored for metrics). */
+const metricMeasure = (id: string): Measure => ({ column: null, agg: "sum", metric: id });
+
+function rawMeasure(columns: CatalogTable["columns"]): Measure {
+  const numeric = columns.find((c) => isNumericType(c.data_type));
+  return numeric ? { column: numeric.name, agg: "sum" } : { column: null, agg: "count" };
+}
+
+/** Metrics first: approved business definitions, then raw column aggregations (not governed).
+ * A visual uses one or the other, since a raw aggregation has no grain to join on. */
 function MeasuresField({
   measures,
   single,
   columns,
+  metrics,
   onChange,
 }: {
   measures: Measure[];
   single: boolean;
   columns: CatalogTable["columns"];
+  metrics: ModelMetric[];
   onChange: (m: Measure[]) => void;
 }) {
   const set = (i: number, m: Measure) => onChange(measures.map((x, j) => (j === i ? m : x)));
+  const governed = measures.some((m) => m.metric);
+  const unused = metrics.find((x) => !measures.some((m) => m.metric === x.note_id));
+  const others = (i: number) => measures.filter((_, j) => j !== i);
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-1 text-xs font-semibold text-secondary-foreground">
         {single ? "Measure" : "Measures"}
       </legend>
       {measures.map((m, i) => (
-        <div key={i} className="flex gap-1.5">
-          <select
-            aria-label="Aggregation"
-            className={cn(control, "w-32 flex-none")}
-            value={m.agg}
-            onChange={(e) => {
-              const agg = e.target.value as Aggregation;
-              const numeric = agg === "sum" || agg === "avg";
-              const column =
-                agg === "count"
-                  ? null
-                  : m.column &&
-                      (!numeric ||
-                        isNumericType(columns.find((c) => c.name === m.column)?.data_type ?? ""))
-                    ? m.column
-                    : (columns.find((c) => (numeric ? isNumericType(c.data_type) : true))?.name ??
-                      null);
-              set(i, { agg, column });
-            }}
-          >
-            {AGGS.map(([agg, label]) => (
-              <option key={agg} value={agg}>
-                {label}
+        <div key={i} className="grid gap-1.5">
+          {(metrics.length > 0 || m.metric) && (
+            <select
+              aria-label="Metric"
+              className={control}
+              value={m.metric ?? RAW}
+              onChange={(e) =>
+                set(i, e.target.value === RAW ? rawMeasure(columns) : metricMeasure(e.target.value))
+              }
+            >
+              <optgroup label="Metrics">
+                {metrics.map((metric) => (
+                  <option
+                    key={metric.note_id}
+                    value={metric.note_id}
+                    disabled={others(i).some((o) => !o.metric)}
+                  >
+                    {metric.title}
+                    {metric.standing === "unapproved" ? " · not approved" : ""}
+                  </option>
+                ))}
+                {m.metric && !metrics.some((x) => x.note_id === m.metric) && (
+                  <option value={m.metric}>Unavailable metric</option>
+                )}
+              </optgroup>
+              <option value={RAW} disabled={others(i).some((o) => o.metric)}>
+                Raw column (not governed)
               </option>
-            ))}
-          </select>
-          <select
-            aria-label="Of column"
-            className={control}
-            value={m.column ?? ""}
-            onChange={(e) => set(i, { ...m, column: e.target.value || null })}
-          >
-            {m.agg === "count" && <option value="">rows</option>}
-            {columns
-              .filter((c) =>
-                m.agg === "sum" || m.agg === "avg" ? isNumericType(c.data_type) : true,
-              )
-              .map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
+            </select>
+          )}
+          {!m.metric && <RawMeasure m={m} columns={columns} onChange={(next) => set(i, next)} />}
           {measures.length > 1 && (
             <button
               type="button"
-              aria-label="Remove measure"
               onClick={() => onChange(measures.filter((_, j) => j !== i))}
-              className="grid size-9 flex-none place-items-center rounded-md hover:bg-secondary"
+              className="flex items-center gap-1 justify-self-end text-xs text-subtle-foreground hover:text-foreground"
             >
-              <Trash2 className="size-4 text-subtle-foreground" />
+              <Trash2 className="size-3.5" /> Remove
             </button>
           )}
         </div>
       ))}
-      {!single && measures.length < 6 && (
+      {!single && measures.length < 6 && !(governed && !unused) && (
         <button
           type="button"
-          onClick={() => onChange([...measures, { column: null, agg: "count" }])}
+          onClick={() =>
+            onChange([
+              ...measures,
+              governed && unused ? metricMeasure(unused.note_id) : { column: null, agg: "count" },
+            ])
+          }
           className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
         >
           <Plus className="size-4" /> Add measure
         </button>
       )}
     </fieldset>
+  );
+}
+
+function RawMeasure({
+  m,
+  columns,
+  onChange,
+}: {
+  m: Measure;
+  columns: CatalogTable["columns"];
+  onChange: (m: Measure) => void;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      <select
+        aria-label="Aggregation"
+        className={cn(control, "w-32 flex-none")}
+        value={m.agg}
+        onChange={(e) => {
+          const agg = e.target.value as Aggregation;
+          const numeric = agg === "sum" || agg === "avg";
+          const column =
+            agg === "count"
+              ? null
+              : m.column &&
+                  (!numeric ||
+                    isNumericType(columns.find((c) => c.name === m.column)?.data_type ?? ""))
+                ? m.column
+                : (columns.find((c) => (numeric ? isNumericType(c.data_type) : true))?.name ??
+                  null);
+          onChange({ agg, column });
+        }}
+      >
+        {AGGS.map(([agg, label]) => (
+          <option key={agg} value={agg}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="Of column"
+        className={control}
+        value={m.column ?? ""}
+        onChange={(e) => onChange({ ...m, column: e.target.value || null })}
+      >
+        {m.agg === "count" && <option value="">rows</option>}
+        {columns
+          .filter((c) => (m.agg === "sum" || m.agg === "avg" ? isNumericType(c.data_type) : true))
+          .map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+      </select>
+    </div>
   );
 }
 

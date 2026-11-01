@@ -97,6 +97,7 @@ export type * from "./generated/Standing";
 export type * from "./generated/TableMode";
 export type * from "./generated/TableQuery";
 export type * from "./generated/TimeBucket";
+export type * from "./generated/UnapprovedLogic";
 export type * from "./generated/UnresolvedLink";
 export type * from "./generated/UpdateProjectMemberRequest";
 export type * from "./generated/UserInfo";

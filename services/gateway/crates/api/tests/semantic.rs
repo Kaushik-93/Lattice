@@ -337,3 +337,118 @@ async fn definitions_are_checked_when_saved(pool: PgPool) {
     .await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
 }
+
+fn results(events: &[Event]) -> Vec<(&lattice_api::dto::ResultHeader, usize)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Result(h, rows) => Some((h, *rows)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn visuals_chart_metrics(pool: PgPool) {
+    use futures_util::SinkExt as _;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let d = demo(pool).await;
+    let path = format!("/api/projects/{}/model", d.project);
+    let m = json_call(&d.h.app, "GET", &path, Some(&d.cookie), None)
+        .await
+        .body;
+    let orders = named(&m["entities"], "Order")["table"]["table_id"].clone();
+    let net = named(&m["metrics"], "Net revenue")["note_id"].clone();
+    let refund_rate = named(&m["metrics"], "Refund rate")["note_id"].clone();
+    let metric = |id: &Value| json!({ "agg": "sum", "metric": id });
+    let (bar, kpi, mixed, joined) = (
+        Uuid::from_u128(1),
+        Uuid::from_u128(2),
+        Uuid::from_u128(3),
+        Uuid::from_u128(4),
+    );
+    let visuals = json!([
+        { "id": bar, "spec": { "kind": "bar", "title": "Net revenue by region", "table_id": orders,
+          "x": { "column": "region" }, "measures": [metric(&net)] } },
+        { "id": kpi, "spec": { "kind": "kpi", "title": "Refund rate", "table_id": orders,
+          "measures": [metric(&refund_rate)], "options": { "compare": "order_date" } } },
+        { "id": mixed, "spec": { "kind": "bar", "title": "Mixed", "table_id": orders,
+          "x": { "column": "region" }, "measures": [metric(&net), { "column": "amount", "agg": "sum" }] } },
+        // A related entity's column, through "Order placed by Customer".
+        { "id": joined, "spec": { "kind": "column", "title": "By segment", "table_id": orders,
+          "x": { "column": "customer.segment" }, "measures": [metric(&net)] } },
+    ]);
+    let context = json!({ "filters": [
+        { "column": "order_date", "op": "between", "value": ["2026-08-01", "2026-10-31"] }
+    ] });
+    let addr = serve(d.h.state.clone()).await;
+    let mut ws = connect(addr, &d.cookie).await;
+    let mut run = async |batch_id: u32, visuals: &Value, context: &Value| {
+        let msg = json!({ "type": "sheet_batch", "batch_id": batch_id, "project_id": d.project,
+                          "context": context, "visuals": visuals });
+        ws.send(Message::text(msg.to_string())).await.unwrap();
+        until_done(&mut ws, batch_id).await
+    };
+
+    let events = run(1, &visuals, &context).await;
+    let out = results(&events);
+    let find = |id: &str| {
+        out.iter()
+            .find(|(h, _)| h.query_id == id)
+            .unwrap_or_else(|| panic!("no result for {id}"))
+    };
+    let (h, rows) = find(&bar.to_string());
+    assert_eq!(*rows, 3);
+    let names: Vec<&str> = h.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["region", "net_revenue"]);
+    assert!(h.unapproved.is_empty(), "every definition is approved");
+    let (h, rows) = find(&kpi.to_string());
+    assert_eq!(*rows, 1);
+    assert_eq!(h.unapproved.len(), 1);
+    assert_eq!(h.unapproved[0].title, "Refund rate");
+    let (h, _) = find(&format!("{kpi}:compare"));
+    assert_eq!(h.unapproved[0].title, "Refund rate");
+    let (h, rows) = find(&joined.to_string());
+    assert_eq!(*rows, 2, "consumer and business");
+    assert_eq!(h.columns[0].name, "segment");
+    let error = events
+        .iter()
+        .find_map(|e| match e {
+            Event::Error(v) if v["query_id"] == mixed.to_string() => Some(v),
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        error["message"].as_str().unwrap().contains("not both"),
+        "{error}"
+    );
+
+    // Sheet filters on the grain's columns apply.
+    let one_region = json!({ "filters": [{ "column": "region", "op": "in", "value": ["EMEA"] }] });
+    let bar_only = json!([visuals[0].clone()]);
+    let events = run(2, &bar_only, &one_region).await;
+    let (h, rows) = results(&events)[0];
+    assert_eq!(rows, 1);
+    let fingerprint = h.fingerprint.clone();
+    let events = run(3, &bar_only, &one_region).await;
+    assert!(results(&events)[0].0.cached);
+
+    // A new approved version of the metric is a new result, not a cached one.
+    let net_id = net.as_str().unwrap();
+    let edit = json!({ "title": "Net revenue", "body": "Every order's amount.",
+                       "definition": { "formula": "SUM(order.amount)" } });
+    for (method, action, body) in [
+        ("PUT", "draft", Some(edit)),
+        ("POST", "submit", None),
+        ("POST", "approve", None),
+    ] {
+        let path = format!("/api/knowledge/notes/{net_id}/{action}");
+        let reply = json_call(&d.h.app, method, &path, Some(&d.cookie), body).await;
+        assert_eq!(reply.status, StatusCode::OK, "{action}: {}", reply.body);
+    }
+    let events = run(4, &bar_only, &one_region).await;
+    let (h, _) = results(&events)[0];
+    assert!(!h.cached);
+    assert_ne!(h.fingerprint, fingerprint);
+}

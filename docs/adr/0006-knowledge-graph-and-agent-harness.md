@@ -84,6 +84,21 @@ Because the relational tables are the source of truth, an AGE projection can be 
 without migrating data, if path queries outgrow SQL (e.g. the agent's `graph_context` tool at
 much larger scale). The extension stays installed.
 
+### Metrics in visuals (slice 3.2)
+
+- **Entities bind per project.** A shared entity ("Order") is defined in business terms; each
+  project says which of its tables it is (`entity_bindings`). A visual over metrics takes its
+  table's entity as the grain; bare columns are that entity's, `customer.segment` reaches a
+  related one through many-to-one relationships.
+- **A visual uses metrics or raw columns, not both.** A raw aggregation has no definition to
+  join or filter by, so mixing them would silently compute two different populations. The editor
+  offers metrics first; raw aggregations remain, marked "Not governed".
+- **A standing rule applies once approved.** A pending "always" rule (e.g. *Exclude internal
+  accounts*) would otherwise change approved numbers before anyone reviewed it. Unapproved
+  metrics and conditional rules can be used explicitly and carry the "Unapproved logic" badge.
+- **The result cache keys on logic.** Every definition used (`note_id@version`) and every table's
+  data version are part of the key, so approving a new version produces new results.
+
 ## How knowledge gets in
 
 1. Connecting a source: keys, joins, categorical and date columns from profiles → draft entities,

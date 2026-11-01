@@ -60,7 +60,9 @@ export function KpiVisual({ visual, result }: { visual: Visual; result: VisualRe
         </span>
       ) : (
         <span className="text-xs text-muted-foreground">
-          {visual.spec.measures[0] ? measureLabel(visual.spec.measures[0]) : ""}
+          {visual.spec.measures[0]
+            ? measureLabel(visual.spec.measures[0], result.main?.table.schema.fields[0]?.name)
+            : ""}
         </span>
       )}
     </div>

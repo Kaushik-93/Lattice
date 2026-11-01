@@ -83,5 +83,9 @@ describe("shaping results for charts", () => {
   it("labels measures", () => {
     expect(measureLabel({ column: null, agg: "count" })).toBe("Count");
     expect(measureLabel({ column: "amount", agg: "avg" })).toBe("Average of amount");
+    // A metric is named after its result column, which the gateway names after the metric.
+    const metric = { column: null, agg: "sum" as const, metric: "n1" };
+    expect(measureLabel(metric, "average_order_value")).toBe("Average order value");
+    expect(measureLabel(metric)).toBe("Metric");
   });
 });

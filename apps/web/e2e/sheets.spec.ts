@@ -161,3 +161,37 @@ test("share a sheet by link and open it signed out", async ({ page, browser }) =
   await expect(viewer.getByRole("heading", { name: "This link doesn't work" })).toBeVisible();
   await anonymous.close();
 });
+
+test("visuals chart governed metrics; raw columns are marked", async ({ page }) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  const net = page.getByRole("region", { name: "Net revenue", exact: true });
+  const orders = page.getByRole("region", { name: "Orders", exact: true });
+  await expect(orders.getByText("Not governed")).toBeVisible();
+  await expect(net.getByText("Not governed")).toHaveCount(0);
+  await expect(net.getByText("Unapproved logic")).toHaveCount(0);
+
+  // The editor offers metrics first.
+  await page.getByRole("button", { name: "Net revenue by region: more actions" }).click();
+  await page.getByRole("menuitem", { name: "Edit" }).click();
+  const picker = page.getByRole("complementary", { name: "Editor" }).getByLabel("Metric");
+  await expect(picker.locator("option:checked")).toHaveText("Net revenue");
+  await page.getByRole("button", { name: "Done editing" }).click();
+
+  // A draft metric is usable, flagged on the visual. (On a sheet of our own.)
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  try {
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    await page.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await page.getByLabel("Title").fill("Refunds");
+    await page.getByLabel("Metric").selectOption({ label: "Refund rate · not approved" });
+    await expect(
+      page.getByRole("region", { name: "Refunds" }).getByText("Unapproved logic"),
+    ).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+  }
+});

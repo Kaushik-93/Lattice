@@ -56,14 +56,15 @@ export function TableVisual({
   // Summaries: readable headers and the visual's number format.
   const spec = visual.spec;
   const labels = useMemo(
-    () =>
-      raw
-        ? undefined
-        : [spec.x, spec.series]
-            .filter((d) => d !== undefined)
-            .map((d) => d.column)
-            .concat(spec.measures.map(measureLabel)),
-    [raw, spec],
+    () => {
+      if (raw) return undefined;
+      const dims = [spec.x, spec.series].filter((d) => d !== undefined).map((d) => d.column);
+      const fields = table.schema.fields;
+      return dims.concat(
+        spec.measures.map((m, i) => measureLabel(m, fields[dims.length + i]?.name)),
+      );
+    },
+    [raw, spec, table],
   );
   const formatCellAt = useCallback(
     (value: unknown, column: number): string | null => {
@@ -71,7 +72,8 @@ export function TableVisual({
       const dim = dims[column];
       if (dim) return formatDimension(value, table.schema.fields[column], dim);
       const n = toNumber(value);
-      const agg = spec.measures[column - dims.length]?.agg;
+      const measure = spec.measures[column - dims.length];
+      const agg = measure?.metric ? undefined : measure?.agg;
       const counted =
         agg === "count" || agg === "count_distinct" || agg === "approx_count_distinct";
       return n === null

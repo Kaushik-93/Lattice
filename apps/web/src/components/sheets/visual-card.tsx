@@ -4,6 +4,7 @@ import type { Dimension, Scalar, Visual } from "@lattice/shared-types";
 import type { Field } from "apache-arrow";
 import {
   ChevronRight,
+  CircleAlert,
   Copy,
   Download,
   Grip,
@@ -139,6 +140,8 @@ export const VisualCard = memo(function VisualCard({ visual }: { visual: Visual 
 
   const table = result.main?.table;
   const isKpi = spec.kind === "kpi";
+  const unapproved = result.main?.header.unapproved ?? [];
+  const ungoverned = spec.measures.some((m) => !m.metric);
   let body: React.ReactNode;
   if (result.error) {
     body = (
@@ -269,6 +272,24 @@ export const VisualCard = memo(function VisualCard({ visual }: { visual: Visual 
           >
             Top {result.main.header.rows.toLocaleString("en-US")}
           </span>
+        )}
+        {unapproved.length > 0 ? (
+          <span
+            className="flex items-center gap-1 rounded bg-warning-surface px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-warning"
+            title={`Uses logic that isn't approved yet: ${unapproved.map((u) => u.title).join(", ")}`}
+          >
+            <CircleAlert className="size-3" aria-hidden />
+            Unapproved logic
+          </span>
+        ) : (
+          ungoverned && (
+            <span
+              className="px-1 py-0.5 text-[11px] whitespace-nowrap text-subtle-foreground"
+              title="Computed from raw columns, not from an approved metric"
+            >
+              Not governed
+            </span>
+          )
         )}
         <DropdownMenu>
           <DropdownMenuTrigger

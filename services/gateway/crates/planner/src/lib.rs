@@ -82,6 +82,11 @@ pub struct Measure {
     #[serde(default)]
     pub column: Option<String>,
     pub agg: Aggregation,
+    /// A governed metric (a knowledge note, docs/adr/0006). When set, `column` and `agg` are
+    /// ignored: the metric's formula says what to compute, through the semantic model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub metric: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -200,4 +205,6 @@ pub enum PlanError {
     InvalidFilter { column: String, reason: String },
     #[error("cannot sort by {0:?}: not an output column")]
     UnknownSort(String),
+    #[error("metrics are computed through the business logic, not a single table")]
+    NeedsModel,
 }

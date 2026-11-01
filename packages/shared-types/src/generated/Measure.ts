@@ -5,4 +5,9 @@ export type Measure = {
 /**
  * Omitted only for `count` (counts rows).
  */
-column: string | null, agg: Aggregation, };
+column: string | null, agg: Aggregation, 
+/**
+ * A governed metric (a knowledge note, docs/adr/0006). When set, `column` and `agg` are
+ * ignored: the metric's formula says what to compute, through the semantic model.
+ */
+metric?: string, };

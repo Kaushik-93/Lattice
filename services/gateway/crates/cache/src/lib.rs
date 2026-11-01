@@ -31,21 +31,28 @@ pub struct CacheKey<'a> {
     pub sql: &'a str,
     /// Bound parameters, rendered unambiguously (e.g. their `Debug` form).
     pub params: &'a str,
-    pub data_version: i64,
-    pub logic_version: i64,
+    /// Every table read, with its data version.
+    pub data_versions: &'a [(Uuid, i64)],
+    /// Every business-logic definition used, as `note_id@version` (empty for raw queries).
+    pub logic: &'a str,
     pub rls_context: &'a str,
 }
 
 impl CacheKey<'_> {
     pub fn render(&self) -> String {
         let mut h = Sha256::new();
+        let mut versions = Vec::with_capacity(self.data_versions.len() * 24);
+        for (table, version) in self.data_versions {
+            versions.extend_from_slice(table.as_bytes());
+            versions.extend_from_slice(&version.to_le_bytes());
+        }
         // Length-prefix every part so no two different inputs can collide by concatenation.
         for part in [
             self.project_id.as_bytes().as_slice(),
             self.sql.as_bytes(),
             self.params.as_bytes(),
-            &self.data_version.to_le_bytes(),
-            &self.logic_version.to_le_bytes(),
+            &versions,
+            self.logic.as_bytes(),
             self.rls_context.as_bytes(),
         ] {
             h.update((part.len() as u64).to_le_bytes());
@@ -53,7 +60,7 @@ impl CacheKey<'_> {
         }
         let digest = h.finalize();
         let mut key = String::with_capacity(70);
-        key.push_str("rc:v1:");
+        key.push_str("rc:v2:");
         for byte in digest {
             let _ = write!(key, "{byte:02x}");
         }
@@ -113,12 +120,16 @@ mod tests {
     use super::*;
 
     fn key(sql: &str, params: &str, version: i64) -> String {
+        logic_key(sql, params, version, "")
+    }
+
+    fn logic_key(sql: &str, params: &str, version: i64, logic: &str) -> String {
         CacheKey {
             project_id: Uuid::nil(),
             sql,
             params,
-            data_version: version,
-            logic_version: 0,
+            data_versions: &[(Uuid::nil(), version)],
+            logic,
             rls_context: "",
         }
         .render()
@@ -128,10 +139,15 @@ mod tests {
     fn stable_and_sensitive_to_every_input() {
         let base = key("SELECT 1", "[]", 1);
         assert_eq!(base, key("SELECT 1", "[]", 1));
-        assert!(base.starts_with("rc:v1:") && base.len() == 6 + 64);
+        assert!(base.starts_with("rc:v2:") && base.len() == 6 + 64);
         assert_ne!(base, key("SELECT 2", "[]", 1));
         assert_ne!(base, key("SELECT 1", "[1]", 1));
         assert_ne!(base, key("SELECT 1", "[]", 2), "new data version → new key");
+        assert_ne!(
+            logic_key("SELECT 1", "[]", 1, "n@1"),
+            logic_key("SELECT 1", "[]", 1, "n@2"),
+            "new definition version → new key"
+        );
     }
 
     #[test]

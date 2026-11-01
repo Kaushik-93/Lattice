@@ -14,8 +14,8 @@ fn bench(c: &mut Criterion) {
                 project_id: Uuid::nil(),
                 sql: black_box(sql),
                 params: black_box("[Text(\"EMEA\"), Text(\"APAC\")]"),
-                data_version: 3,
-                logic_version: 0,
+                data_versions: &[(Uuid::nil(), 3)],
+                logic: "",
                 rls_context: "",
             }
             .render()

@@ -37,7 +37,13 @@ export const SEQUENTIAL = [
 const INK = { primary: "#101828", secondary: "#556070", grid: "#eef0f3", axis: "#e4e7ec" };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
-export function measureLabel(m: Measure): string {
+/** How a measure is named in legends and headers. A metric is named after its result column
+ * (the gateway names it after the metric: "net_revenue" → "Net revenue"). */
+export function measureLabel(m: Measure, field?: string): string {
+  if (m.metric) {
+    const words = (field ?? "metric").replace(/_+/g, " ").trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
   const of = m.column ? ` of ${m.column}` : "";
   switch (m.agg) {
     case "count":
@@ -83,7 +89,7 @@ export function shape(spec: VisualSpec, table: Table): Shaped {
       series: fields.slice(1).map((field, i) => {
         const m = spec.measures[i];
         return {
-          name: m ? measureLabel(m) : field.name === "count" ? "Count" : field.name,
+          name: m ? measureLabel(m, field.name) : field.name === "count" ? "Count" : field.name,
           values: numbersOf(table, i + 1),
         };
       }),

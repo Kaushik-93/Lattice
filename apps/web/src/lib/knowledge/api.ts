@@ -2,9 +2,11 @@
 
 import type {
   KnowledgeGraph,
+  ModelMetric,
   NewNote,
   NoteDetail,
   NoteEdit,
+  ProjectModelResponse,
   QueueResponse,
   WorkspaceMembersResponse,
 } from "@lattice/shared-types";
@@ -17,6 +19,8 @@ export const knowledgeKeys = {
   graph: (project: string | null) => ["knowledge", "graph", project ?? "workspace"] as const,
   note: (id: string) => ["knowledge", "note", id] as const,
   queue: ["knowledge", "queue"] as const,
+  // Under "knowledge" so every note change refreshes it.
+  model: (project: string) => ["knowledge", "model", project] as const,
   members: ["workspace", "members"] as const,
 };
 
@@ -41,6 +45,32 @@ export function useNote(id: string | null) {
     enabled: id !== null,
     retry: noRetryOn4xx,
   });
+}
+
+/** The semantic model a project sees: entities and their tables, metrics, rules. */
+export function useProjectModel(project: string | null) {
+  return useQuery({
+    queryKey: knowledgeKeys.model(project ?? ""),
+    queryFn: ({ signal }) =>
+      api<ProjectModelResponse>(`/api/projects/${encodeURIComponent(project ?? "")}/model`, {
+        signal,
+      }),
+    enabled: project !== null,
+    retry: noRetryOn4xx,
+    staleTime: 30_000,
+  });
+}
+
+/** Metrics a visual on `tableId` can chart: they count the entity bound to that table. */
+export function metricsFor(
+  model: ProjectModelResponse | undefined,
+  tableId: string,
+): ModelMetric[] {
+  if (!model) return [];
+  const grains = new Set(
+    model.entities.filter((e) => e.table?.table_id === tableId).map((e) => e.ident),
+  );
+  return model.metrics.filter((m) => m.grain !== null && grains.has(m.grain));
 }
 
 export function useReviewQueue() {

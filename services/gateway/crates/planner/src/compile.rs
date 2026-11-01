@@ -195,6 +195,9 @@ impl Ctx<'_> {
     }
 
     fn measure(&self, m: &Measure) -> Result<(String, String), PlanError> {
+        if m.metric.is_some() {
+            return Err(PlanError::NeedsModel);
+        }
         let name = agg_name(m.agg);
         let Some(column) = &m.column else {
             return match m.agg {

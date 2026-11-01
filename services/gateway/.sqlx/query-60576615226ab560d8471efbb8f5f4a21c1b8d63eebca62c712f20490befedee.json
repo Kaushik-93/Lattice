@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.note_id, b.table_id, s.id AS source_id, s.kind, t.schema_name, t.table_name,\n                  s.data_version,\n                  COALESCE(array_agg(c.name ORDER BY c.ordinal) FILTER (WHERE c.name IS NOT NULL),\n                           '{}') AS \"names!\",\n                  COALESCE(array_agg(c.data_type ORDER BY c.ordinal) FILTER (WHERE c.name IS NOT NULL),\n                           '{}') AS \"types!\"\n           FROM entity_bindings b\n           JOIN source_tables t ON t.id = b.table_id\n           JOIN sources s ON s.id = t.source_id AND s.project_id = b.project_id\n           LEFT JOIN source_columns c ON c.table_id = t.id\n           WHERE b.project_id = $1\n           GROUP BY b.note_id, b.table_id, s.id, t.schema_name, t.table_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "note_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "table_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "schema_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "table_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "data_version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "names!",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 8,
+        "name": "types!",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "60576615226ab560d8471efbb8f5f4a21c1b8d63eebca62c712f20490befedee"
+}

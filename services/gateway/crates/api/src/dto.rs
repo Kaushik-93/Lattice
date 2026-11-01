@@ -385,6 +385,18 @@ pub struct ResultHeader {
     /// Changes exactly when the result's data may differ (see `query::fingerprint`).
     pub fingerprint: String,
     pub timings: QueryTimings,
+    /// Business logic used that isn't approved yet ("Uses unapproved logic").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<UnapprovedLogic>>", optional)]
+    pub unapproved: Vec<UnapprovedLogic>,
+}
+
+/// A draft or pending definition a result used.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UnapprovedLogic {
+    pub note_id: Uuid,
+    pub title: String,
 }
 
 /// Where the gateway spent its time on one query (spec §3 rule 8). The browser adds transfer,

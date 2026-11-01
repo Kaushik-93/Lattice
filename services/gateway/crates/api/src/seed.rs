@@ -2,6 +2,8 @@
 //! "Acme Retail", with a signed-in-able admin, a few teammates, and a generated retail dataset.
 //! Idempotent.
 
+use std::collections::HashMap;
+
 use lattice_catalog::{self as catalog, NewSource, SourceStatus};
 use lattice_connectors::SourceKind;
 use lattice_engine::demo;
@@ -134,9 +136,9 @@ pub async fn seed_demo_data(
     )
     .fetch_one(&state.pool)
     .await?;
-    seed_demo_sheets(state, seed, table).await?;
-    seed_demo_knowledge(&state.pool, seed).await?;
+    let metrics = seed_demo_knowledge(&state.pool, seed).await?;
     seed_demo_bindings(&state.pool, seed, source).await?;
+    seed_demo_sheets(state, seed, table, &metrics).await?;
     Ok(source)
 }
 
@@ -166,7 +168,11 @@ enum DemoState {
 /// proposals waiting for review, a draft, and links to a note nobody has written yet. Seeded
 /// through the same create → submit → approve path people use. Nothing here claims to come
 /// from the AI (phase 4): proposals are marked as demo content.
-pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), ApiError> {
+/// Returns the metrics it created, by title.
+pub async fn seed_demo_knowledge(
+    pool: &PgPool,
+    seed: &DemoSeed,
+) -> Result<HashMap<&'static str, Uuid>, ApiError> {
     use DemoState::*;
     use NoteKind::*;
     let notes: [DemoNote; 19] = [
@@ -367,6 +373,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
         workspace_role: WorkspaceRole::Admin,
         projects: lattice_project::roles_for_user(pool, seed.workspace_id, seed.admin_id).await?,
     };
+    let mut metrics = HashMap::new();
     for (kind, title, team, body, definition, state, local) in notes {
         let new = NewNote {
             kind,
@@ -382,18 +389,15 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
             value: json!({ "source": "demo" }),
         };
         let id = knowledge::create(pool, &viewer, &new, provenance).await?;
+        if kind == Metric {
+            metrics.insert(title, id);
+        }
         if state == Approved {
             knowledge::approve(pool, &viewer, id).await?;
         }
     }
     // A proposed change waiting on an approved metric: shorten the active window.
-    let active = knowledge::graph(pool, &viewer, None)
-        .await?
-        .nodes
-        .into_iter()
-        .find(|n| n.title == "Active customer")
-        .map(|n| n.id);
-    if let Some(id) = active {
+    if let Some(&id) = metrics.get("Active customer") {
         knowledge::save_draft(
             pool,
             &viewer,
@@ -408,7 +412,7 @@ pub async fn seed_demo_knowledge(pool: &PgPool, seed: &DemoSeed) -> Result<(), A
         .await?;
         knowledge::submit(pool, &viewer, id).await?;
     }
-    Ok(())
+    Ok(metrics)
 }
 
 /// Connects the shared entities to the demo dataset's tables in Revenue Analytics.
@@ -441,7 +445,15 @@ async fn seed_demo_bindings(pool: &PgPool, seed: &DemoSeed, source: Uuid) -> Res
 
 /// "Revenue Review" (screen 06 of the design), "Regional ops" and "Order explorer" (a million
 /// points on a WebGL scatter plot).
-async fn seed_demo_sheets(state: &AppState, seed: &DemoSeed, orders: Uuid) -> Result<(), ApiError> {
+/// Revenue Review charts the governed metrics; the other sheets aggregate raw columns.
+async fn seed_demo_sheets(
+    state: &AppState,
+    seed: &DemoSeed,
+    orders: Uuid,
+    metrics: &HashMap<&'static str, Uuid>,
+) -> Result<(), ApiError> {
+    let metric = |title: &str| json!({ "agg": "sum", "metric": metrics.get(title) });
+    let net = metric("Net revenue");
     let fiscal_q3 = json!({
         "id": Uuid::new_v4(), "column": "order_date", "label": "Fiscal Q3 · Aug–Oct",
         "kind": "date_range", "value": ["2026-08-01", "2026-10-31"]
@@ -461,42 +473,34 @@ async fn seed_demo_sheets(state: &AppState, seed: &DemoSeed, orders: Uuid) -> Re
             "Revenue Review",
             vec![fiscal_q3.clone(), regions.clone()],
             vec![
-                (kpi("Net revenue", sum.clone(), "currency"), [0, 0, 3, 2]),
+                (kpi("Net revenue", net.clone(), "currency"), [0, 0, 3, 2]),
                 (
                     kpi("Orders", json!({ "agg": "count" }), "number"),
                     [3, 0, 3, 2],
                 ),
                 (
-                    kpi(
-                        "Avg order value",
-                        json!({ "column": "amount", "agg": "avg" }),
-                        "currency",
-                    ),
+                    kpi("Avg order value", metric("Average order value"), "currency"),
                     [6, 0, 3, 2],
                 ),
                 (
-                    kpi(
-                        "Active customers",
-                        json!({ "column": "customer_id", "agg": "approx_count_distinct" }),
-                        "number",
-                    ),
+                    kpi("Active customers", metric("Active customer"), "number"),
                     [9, 0, 3, 2],
                 ),
                 (
                     json!({ "kind": "area", "title": "Net revenue by week",
-                         "x": { "column": "order_date", "bucket": "week" }, "measures": [sum.clone()],
+                         "x": { "column": "order_date", "bucket": "week" }, "measures": [net.clone()],
                          "options": { "format": "currency" } }),
                     [0, 2, 12, 4],
                 ),
                 (
                     json!({ "kind": "bar", "title": "Net revenue by region", "x": dim("region"),
-                         "drill": [dim("category"), dim("channel")], "measures": [sum.clone()],
+                         "drill": [dim("category"), dim("channel")], "measures": [net.clone()],
                          "options": { "format": "currency" } }),
                     [0, 6, 6, 4],
                 ),
                 (
                     json!({ "kind": "table", "title": "Top categories", "x": dim("category"),
-                         "measures": [sum.clone(), { "agg": "count" }],
+                         "measures": [net.clone(), metric("Average order value")],
                          "sort": { "by": "value", "dir": "desc" }, "limit": 10,
                          "options": { "format": "currency" } }),
                     [6, 6, 6, 4],

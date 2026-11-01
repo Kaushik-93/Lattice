@@ -29,6 +29,10 @@ impl QueryPart {
 pub struct VisualQuery {
     pub part: QueryPart,
     pub query: TableQuery,
+    /// The visual's ordering. For raw measures it is already in `query.sort`; a query over
+    /// metrics names its output columns only once the semantic model compiles it, so it sorts
+    /// from this.
+    pub sort: Option<(SortBy, SortDir)>,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -99,6 +103,7 @@ pub fn compile(
             vec![Measure {
                 column: None,
                 agg: Aggregation::Count,
+                metric: None,
             }]
         } else {
             spec.measures.clone()
@@ -196,9 +201,14 @@ pub fn compile(
         _ => spec.limit.unwrap_or(limit),
     });
 
-    let sort = spec.sort.map(|s| (s.by, s.dir)).or(sort);
+    let sort = spec
+        .sort
+        .map(|s| (s.by, s.dir))
+        .or(sort)
+        .filter(|_| !query.dimensions.is_empty());
+    let governed = query.measures.iter().any(|m| m.metric.is_some());
     if let Some((by, dir)) = sort
-        && !query.dimensions.is_empty()
+        && !governed
     {
         // Output column names come from the planner (e.g. `sum_amount`), so ask it.
         let columns = lattice_planner::compile(&query, table)?.columns;
@@ -224,15 +234,18 @@ pub fn compile(
         out.push(VisualQuery {
             part: QueryPart::Main,
             query,
+            sort,
         });
         out.push(VisualQuery {
             part: QueryPart::Compare,
             query: compare,
+            sort,
         });
     } else {
         out.push(VisualQuery {
             part: QueryPart::Main,
             query,
+            sort,
         });
     }
     Ok(out)
