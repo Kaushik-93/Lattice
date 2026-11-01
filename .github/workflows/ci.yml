@@ -175,7 +175,12 @@ jobs:
       - name: Build images (BuildKit, GitHub Actions layer cache)
         run: |
           start=$(date +%s)
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml build
+          if ! docker compose -f docker-compose.yml -f docker-compose.ci.yml build --progress plain > build.log 2>&1; then
+            tail -n 60 build.log
+            # Job logs need admin rights; annotations don't.
+            echo "::error title=Image build failed::$(tail -n 40 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            exit 1
+          fi
           echo "image_build_seconds=$(( $(date +%s) - start ))" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: docker compose up
         run: |
