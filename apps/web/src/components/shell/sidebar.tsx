@@ -27,6 +27,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { capitalize } from "@/lib/format";
 import { useLogout, useMe, useProjects } from "@/lib/queries";
+import { useReviewQueue } from "@/lib/knowledge/api";
 import { useSheets } from "@/lib/sheets/api";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,12 @@ export function Sidebar() {
       >
         Shared with me
       </NavItem>
-      <NavItem href="/logic" icon={<LogicIcon />} active={pathname.startsWith("/logic")}>
+      <NavItem
+        href="/logic"
+        icon={<LogicIcon />}
+        active={pathname.startsWith("/logic")}
+        badge={<ReviewCount />}
+      >
         Business logic
       </NavItem>
 
@@ -127,6 +133,23 @@ export function Sidebar() {
       <div className="flex-1" />
       <UserMenu />
     </SidebarFrame>
+  );
+}
+
+/** Knowledge waiting for the viewer's review (the design's count beside Business logic). */
+function ReviewCount() {
+  const queue = useReviewQueue();
+  const count = (queue.data ?? []).filter(
+    (i) => i.revision.status === "pending" && i.can_review,
+  ).length;
+  if (count === 0) return null;
+  return (
+    <span
+      className="ml-auto rounded-full bg-warning-surface px-1.5 text-[11px] font-semibold text-warning"
+      aria-label={`${count} waiting for your review`}
+    >
+      {count}
+    </span>
   );
 }
 
@@ -203,11 +226,13 @@ function NavItem({
   href,
   icon,
   active = false,
+  badge,
   children,
 }: {
   href: string;
   icon: ReactNode;
   active?: boolean;
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -223,6 +248,7 @@ function NavItem({
     >
       {icon}
       {children}
+      {badge}
     </Link>
   );
 }
