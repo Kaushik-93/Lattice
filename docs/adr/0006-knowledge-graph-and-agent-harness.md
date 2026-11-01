@@ -96,6 +96,14 @@ much larger scale). The extension stays installed.
 - **A standing rule applies once approved.** A pending "always" rule (e.g. *Exclude internal
   accounts*) would otherwise change approved numbers before anyone reviewed it. Unapproved
   metrics and conditional rules can be used explicitly and carry the "Unapproved logic" badge.
+- **Example cases are rows, not live numbers** (decision 6 in practice). A case gives a few rows
+  per entity and the answer the definition must produce on them; the gateway compiles the
+  definition as if approved and runs it on those rows in a scratch in-memory DuckDB (no files,
+  no extensions). Cases test the logic, so a data refresh can never block an approval; checking
+  live totals belongs to data-quality monitoring. Approval pins the version whose cases passed.
+- **Impact before approval.** The reviewer sees the definitions that use the note (through
+  `[[links]]` in formulas and conditions, transitively) and the visuals charting any of them;
+  visuals in projects the reviewer can't open are counted, not named.
 - **The result cache keys on logic.** Every definition used (`note_id@version`) and every table's
   data version are part of the key, so approving a new version produces new results.
 

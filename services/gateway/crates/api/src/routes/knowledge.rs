@@ -4,7 +4,8 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use lattice_knowledge::{
-    self as knowledge, KnowledgeGraph, NewNote, NoteDetail, NoteEdit, Provenance, QueueItem, Viewer,
+    self as knowledge, KnowledgeGraph, NewNote, NoteDetail, NoteEdit, Provenance, QueueItem,
+    RevisionStatus, Viewer,
 };
 use lattice_security::Principal;
 use serde::Deserialize;
@@ -12,10 +13,11 @@ use uuid::Uuid;
 
 use crate::auth::Authed;
 use crate::dto::{
-    DeprecateNoteRequest, QueueResponse, RejectNoteRequest, RevertNoteRequest, SetOwnerRequest,
-    WorkspaceMember, WorkspaceMembersResponse,
+    CaseRunResponse, DeprecateNoteRequest, ImpactResponse, QueueResponse, RejectNoteRequest,
+    RevertNoteRequest, SetOwnerRequest, WorkspaceMember, WorkspaceMembersResponse,
 };
 use crate::error::ApiError;
+use crate::review;
 use crate::state::AppState;
 
 async fn viewer(state: &AppState, me: &Principal) -> Result<Viewer, ApiError> {
@@ -106,16 +108,72 @@ pub async fn submit(
     ))
 }
 
+/// Approves the pending change, once its example cases pass (docs/adr/0006 decision 6).
 pub async fn approve(
     State(state): State<AppState>,
     Authed(me): Authed,
     Path(note_id): Path<Uuid>,
 ) -> Result<Json<NoteDetail>, ApiError> {
     let viewer = viewer(&state, &me).await?;
-    knowledge::approve(&state.pool, &viewer, note_id).await?;
+    let note = knowledge::detail(&state.pool, &viewer, note_id).await?;
+    if !note.can.review {
+        return Err(ApiError::Forbidden);
+    }
+    let pending = note
+        .open
+        .as_ref()
+        .filter(|r| r.status == RevisionStatus::Pending);
+    let version = match pending {
+        Some(revision) => {
+            let results = review::run_cases(&state, me.workspace_id, &note, revision).await?;
+            let failing: Vec<&str> = results
+                .iter()
+                .filter(|r| !r.passed)
+                .map(|r| r.name.as_str())
+                .collect();
+            if !failing.is_empty() {
+                return Err(ApiError::Conflict(format!(
+                    "Example cases must pass before this can be approved. Failing: {}.",
+                    failing.join(", ")
+                )));
+            }
+            Some(revision.version)
+        }
+        None => None,
+    };
+    knowledge::approve_version(&state.pool, &viewer, note_id, version).await?;
     Ok(Json(
         knowledge::detail(&state.pool, &viewer, note_id).await?,
     ))
+}
+
+/// Runs the example cases of the change under way, or else of the approved version.
+pub async fn run_cases(
+    State(state): State<AppState>,
+    Authed(me): Authed,
+    Path(note_id): Path<Uuid>,
+) -> Result<Json<CaseRunResponse>, ApiError> {
+    let viewer = viewer(&state, &me).await?;
+    let note = knowledge::detail(&state.pool, &viewer, note_id).await?;
+    let Some(revision) = note.open.as_ref().or(note.live.as_ref()) else {
+        return Err(ApiError::NotFound);
+    };
+    let results = review::run_cases(&state, me.workspace_id, &note, revision).await?;
+    Ok(Json(CaseRunResponse {
+        version: revision.version,
+        results,
+    }))
+}
+
+/// What approving a change to this note would touch.
+pub async fn impact(
+    State(state): State<AppState>,
+    Authed(me): Authed,
+    Path(note_id): Path<Uuid>,
+) -> Result<Json<ImpactResponse>, ApiError> {
+    let viewer = viewer(&state, &me).await?;
+    let note = knowledge::detail(&state.pool, &viewer, note_id).await?;
+    Ok(Json(review::impact(&state, &viewer, &note).await?))
 }
 
 pub async fn reject(

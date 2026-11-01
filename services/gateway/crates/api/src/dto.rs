@@ -499,3 +499,46 @@ pub struct ProjectModelResponse {
 pub struct BindEntityRequest {
     pub table_id: Uuid,
 }
+
+/// One example case of a definition, run against its own rows.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct CaseResult {
+    pub name: String,
+    pub passed: bool,
+    pub expected: Option<f64>,
+    pub actual: Option<f64>,
+    /// Why it couldn't be computed (a column the rows lack, a bad formula…).
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct CaseRunResponse {
+    /// The revision the cases belong to.
+    pub version: i32,
+    pub results: Vec<CaseResult>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ImpactVisual {
+    pub visual_id: Uuid,
+    pub title: String,
+    pub sheet_id: Uuid,
+    pub sheet_name: String,
+    pub project_id: Uuid,
+    pub project_name: String,
+}
+
+/// What approving a change to a definition touches.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ImpactResponse {
+    /// Definitions that use it, directly or through others.
+    pub dependents: Vec<lattice_knowledge::NoteRef>,
+    /// Visuals charting it or a dependent, in projects the viewer can open.
+    pub visuals: Vec<ImpactVisual>,
+    /// Affected visuals in projects the viewer can't open.
+    pub hidden_visuals: u32,
+}

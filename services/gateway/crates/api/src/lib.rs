@@ -8,6 +8,7 @@ pub mod dto;
 pub mod error;
 pub mod middleware;
 pub mod query;
+pub mod review;
 pub mod routes;
 pub mod seed;
 pub mod semantic;
@@ -133,6 +134,14 @@ pub fn router(state: AppState) -> Router {
         .route("/knowledge/queue", get(knowledge_routes::queue))
         .route("/knowledge/notes", post(knowledge_routes::create))
         .route("/knowledge/notes/{id}", get(knowledge_routes::get))
+        .route(
+            "/knowledge/notes/{id}/cases",
+            post(knowledge_routes::run_cases),
+        )
+        .route(
+            "/knowledge/notes/{id}/impact",
+            get(knowledge_routes::impact),
+        )
         .route(
             "/knowledge/notes/{id}/draft",
             axum::routing::put(knowledge_routes::save_draft),

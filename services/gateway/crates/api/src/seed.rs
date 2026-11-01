@@ -154,8 +154,37 @@ type DemoNote = (
     bool,
 );
 
-const ACTIVE_CUSTOMER: &str = "COUNT DISTINCT(order.customer_id) WHERE [[Settled orders only]] \
-     AND order.order_date >= TODAY - {days} DAYS";
+/// Example orders: 160 settled across two orders, plus a refund and a pending one.
+fn order_rows() -> Value {
+    json!([
+        { "amount": 100, "status": "settled" },
+        { "amount": 40, "status": "refunded" },
+        { "amount": 25, "status": "pending" },
+        { "amount": 60, "status": "settled" }
+    ])
+}
+
+/// "Active customer" over the last `days`, with an example that tells 60 days from 90.
+fn active_customer(days: u32, expect: u32) -> Value {
+    json!({
+        "formula": format!(
+            "COUNT DISTINCT(order.customer_id) WHERE [[Settled orders only]] \
+             AND order.order_date >= TODAY - {days} DAYS"
+        ),
+        "cases": [{
+            "name": "Customers with a settled order in the window",
+            "today": "2026-11-01",
+            "rows": { "order": [
+                { "customer_id": 1, "status": "settled", "order_date": "2026-10-01" },
+                { "customer_id": 1, "status": "settled", "order_date": "2026-09-15" },
+                { "customer_id": 4, "status": "settled", "order_date": "2026-08-15" },
+                { "customer_id": 2, "status": "settled", "order_date": "2026-05-01" },
+                { "customer_id": 3, "status": "refunded", "order_date": "2026-10-20" }
+            ] },
+            "expect": expect
+        }]
+    })
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum DemoState {
@@ -261,7 +290,11 @@ pub async fn seed_demo_knowledge(
             "Revenue from [[Order]]s that are [[Settled orders only|settled]] — refunded and pending \
           orders don't count. Reported by the [[Fiscal calendar]]. Also called [[Sales]] or \
           [[Turnover]].",
-            Some(json!({ "formula": "SUM(order.amount) WHERE [[Settled orders only]]" })),
+            Some(json!({
+                "formula": "SUM(order.amount) WHERE [[Settled orders only]]",
+                "cases": [{ "name": "Refunded and pending orders don't count",
+                            "rows": { "order": order_rows() }, "expect": 160 }]
+            })),
             Approved,
             false,
         ),
@@ -270,9 +303,15 @@ pub async fn seed_demo_knowledge(
             "Average order value",
             Some("Finance"),
             "[[Net revenue]] divided by the number of settled [[Order]]s.",
-            Some(
-                json!({ "formula": "[[Net revenue]] / COUNT(order) WHERE [[Settled orders only]]" }),
-            ),
+            Some(json!({
+                "formula": "[[Net revenue]] / COUNT(order) WHERE [[Settled orders only]]",
+                "cases": [
+                    { "name": "Net revenue per settled order",
+                      "rows": { "order": order_rows() }, "expect": 80 },
+                    { "name": "No settled orders, no average",
+                      "rows": { "order": [{ "amount": 10, "status": "pending" }] }, "expect": null }
+                ]
+            })),
             Approved,
             false,
         ),
@@ -281,7 +320,7 @@ pub async fn seed_demo_knowledge(
             "Active customer",
             Some("Growth"),
             "A [[Customer]] with a settled [[Order]] in the last 90 days.",
-            Some(json!({ "formula": ACTIVE_CUSTOMER.replace("{days}", "90") })),
+            Some(active_customer(90, 2)),
             Approved,
             false,
         ),
@@ -291,7 +330,11 @@ pub async fn seed_demo_knowledge(
             Some("Finance"),
             "Only orders with status `settled` count toward revenue metrics such as [[Net revenue]]; \
           `pending` and `refunded` ([[Refund]]) orders don't.",
-            Some(json!({ "condition": "order.status = 'settled'" })),
+            Some(json!({
+                "condition": "order.status = 'settled'",
+                "cases": [{ "name": "Keeps settled orders", "rows": { "order": order_rows() },
+                            "count": "order", "expect": 2 }]
+            })),
             Approved,
             false,
         ),
@@ -340,7 +383,16 @@ pub async fn seed_demo_knowledge(
             Some("Data platform"),
             "Customers flagged `is_internal` (staff and test accounts) are left out of every \
           [[Customer]] metric, such as [[Active customer]].",
-            Some(json!({ "condition": "customer.is_internal = FALSE", "always": true })),
+            Some(json!({
+                "condition": "customer.is_internal = FALSE",
+                "always": true,
+                "cases": [{ "name": "Staff accounts are left out",
+                            "rows": { "customer": [
+                                { "customer_id": 1, "is_internal": false },
+                                { "customer_id": 2, "is_internal": true }
+                            ] },
+                            "count": "customer", "expect": 1 }]
+            })),
             Pending,
             false,
         ),
@@ -350,9 +402,15 @@ pub async fn seed_demo_knowledge(
             Some("Finance"),
             "The share of [[Order]]s that end as a [[Refund]]. About 3 % of orders in the demo data \
           have status `refunded`.",
-            Some(
-                json!({ "formula": "(COUNT(order) WHERE order.status = 'refunded') / COUNT(order)" }),
-            ),
+            Some(json!({
+                "formula": "(COUNT(order) WHERE order.status = 'refunded') / COUNT(order)",
+                "cases": [{ "name": "One refund in four orders",
+                            "rows": { "order": [
+                                { "status": "refunded" }, { "status": "settled" },
+                                { "status": "settled" }, { "status": "pending" }
+                            ] },
+                            "expect": 0.25 }]
+            })),
             Draft,
             false,
         ),
@@ -405,7 +463,7 @@ pub async fn seed_demo_knowledge(
             &NoteEdit {
                 title: "Active customer".into(),
                 body: "A [[Customer]] with a settled [[Order]] in the last 60 days.".into(),
-                definition: Some(json!({ "formula": ACTIVE_CUSTOMER.replace("{days}", "60") })),
+                definition: Some(active_customer(60, 1)),
                 change_note: Some("Growth reviews activity monthly; 90 days lags behind.".into()),
             },
         )

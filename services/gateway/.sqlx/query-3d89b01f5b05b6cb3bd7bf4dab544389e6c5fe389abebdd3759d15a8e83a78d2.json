@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT n.id, r.title_key, r.definition FROM knowledge_notes n\n           JOIN knowledge_revisions r ON r.note_id = n.id AND r.status = 'approved'\n           WHERE n.workspace_id = $1 AND n.deprecated_at IS NULL\n             AND n.kind IN ('metric', 'rule', 'dimension', 'relationship')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "definition",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "3d89b01f5b05b6cb3bd7bf4dab544389e6c5fe389abebdd3759d15a8e83a78d2"
+}

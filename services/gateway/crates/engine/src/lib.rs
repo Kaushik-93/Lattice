@@ -10,6 +10,7 @@ pub mod demo;
 mod error;
 pub mod ipc;
 mod project;
+pub mod scratch;
 
 pub use error::EngineError;
 pub use project::{

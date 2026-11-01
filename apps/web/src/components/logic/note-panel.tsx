@@ -6,14 +6,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNote, useNoteAction } from "@/lib/knowledge/api";
+import { definitionLines } from "@/lib/knowledge/definition";
 import { NoteBody } from "@/lib/knowledge/markdown";
 import { COMPUTABLE, KIND_LABEL, STATE_PILL } from "@/lib/knowledge/style";
 import { cn } from "@/lib/utils";
 
-export function formulaOf(revision: Revision | null | undefined): string {
-  const f = (revision?.definition as { formula?: unknown } | null)?.formula;
-  return typeof f === "string" ? f : "";
-}
+import { ExampleCases, Impact, useCasesPass } from "./review-checks";
 
 function provenanceLabel(r: Revision): string {
   const source = (r.provenance as { source?: string }).source;
@@ -60,7 +58,10 @@ function NoteCard({
   const action = useNoteAction(note.id);
   const shown = note.live ?? note.open ?? note.history[0];
   const pill = STATE_PILL[note.state];
-  const formula = formulaOf(shown);
+  const definition = definitionLines(shown?.definition as Record<string, unknown> | null, {
+    cases: false,
+  });
+  const casesPass = useCasesPass(note);
   const linked = new Map(note.links.map((l) => [l.title.toLowerCase(), l.note]));
   const connected: NoteRef[] = [
     ...note.links.flatMap((l) => (l.note ? [l.note] : [])),
@@ -97,14 +98,18 @@ function NoteCard({
           onLink={(title) => onOpenLink(title, note)}
         />
       )}
-      {COMPUTABLE.includes(note.kind) && formula && (
+      {COMPUTABLE.includes(note.kind) && definition.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-semibold">Formula</span>
+          <span className="text-[13px] font-semibold">
+            {note.kind === "metric" ? "Formula" : "Definition"}
+          </span>
           <pre className="overflow-x-auto rounded-[10px] bg-brand-ink px-4 py-3 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-white">
-            {formula}
+            {definition.join("\n")}
           </pre>
         </div>
       )}
+      <ExampleCases note={note} />
+      {pending && note.can.review && <Impact note={note} />}
       {connected.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <span className="text-[13px] font-semibold">Connected to</span>
@@ -148,6 +153,13 @@ function NoteCard({
             <ReviewButtons
               noteId={note.id}
               pending={action.isPending}
+              blocked={
+                casesPass === false
+                  ? "Its example cases must pass first."
+                  : casesPass === null
+                    ? "Running its example cases…"
+                    : undefined
+              }
               onApprove={() => action.mutate({ kind: "approve" })}
               onReject={(reason) => action.mutate({ kind: "reject", reason })}
             />
@@ -167,11 +179,14 @@ function NoteCard({
 export function ReviewButtons({
   noteId,
   pending,
+  blocked,
   onApprove,
   onReject,
 }: {
   noteId: string;
   pending: boolean;
+  /** Why it can't be approved yet, if it can't. */
+  blocked?: string;
   onApprove: () => void;
   onReject: (reason: string) => void;
 }) {
@@ -211,7 +226,7 @@ export function ReviewButtons({
   }
   return (
     <>
-      <Button onClick={onApprove} disabled={pending}>
+      <Button onClick={onApprove} disabled={pending || !!blocked} title={blocked}>
         Approve
       </Button>
       <Button variant="ghost" onClick={() => setRejecting(true)}>

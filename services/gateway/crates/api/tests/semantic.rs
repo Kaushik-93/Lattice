@@ -303,6 +303,17 @@ async fn definitions_are_checked_when_saved(pool: PgPool) {
             "\"to\"",
         ),
         ("dimension", json!({ "path": "region" }), "entity.column"),
+        (
+            "metric",
+            json!({ "formula": "COUNT(order)", "cases": [{ "name": "x", "rows": {} }] }),
+            "expect",
+        ),
+        (
+            "rule",
+            json!({ "condition": "order.amount > 0",
+                    "cases": [{ "name": "x", "rows": {}, "expect": 1 }] }),
+            "count",
+        ),
     ] {
         let reply = json_call(
             &h.app,
@@ -451,4 +462,182 @@ async fn visuals_chart_metrics(pool: PgPool) {
     let (h, _) = results(&events)[0];
     assert!(!h.cached);
     assert_ne!(h.fingerprint, fingerprint);
+}
+
+async fn cases(d: &Demo, id: &str) -> Value {
+    let path = format!("/api/knowledge/notes/{id}/cases");
+    let reply = json_call(&d.h.app, "POST", &path, Some(&d.cookie), None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    reply.body
+}
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn example_cases_gate_approval(pool: PgPool) {
+    let d = demo(pool).await;
+    let graph = json_call(
+        &d.h.app,
+        "GET",
+        "/api/knowledge/graph",
+        Some(&d.cookie),
+        None,
+    )
+    .await
+    .body;
+    let id = |title: &str| {
+        named(&graph["nodes"], title)["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    // Every seeded case passes, the proposed 60-day window's included.
+    for title in [
+        "Net revenue",
+        "Average order value",
+        "Settled orders only",
+        "Exclude internal accounts",
+        "Refund rate",
+        "Active customer",
+    ] {
+        let run = cases(&d, &id(title)).await;
+        let results = run["results"].as_array().unwrap();
+        assert!(!results.is_empty(), "{title}");
+        for r in results {
+            assert_eq!(r["passed"], true, "{title}: {r}");
+        }
+    }
+    let active = cases(&d, &id("Active customer")).await;
+    assert_eq!(active["version"], 2, "the open change's cases");
+    assert_eq!(active["results"][0]["actual"], 1.0);
+
+    // A definition whose example fails can't be approved; fixed, it can.
+    let rows = json!([
+        { "amount": 100, "status": "settled" },
+        { "amount": 40, "status": "refunded" }
+    ]);
+    let new = json!({ "kind": "metric", "title": "Settled revenue", "body": "", "submit": true,
+        "definition": { "formula": "SUM(order.amount)",
+            "cases": [{ "name": "Refunds don't count", "rows": { "order": rows }, "expect": 100 }] } });
+    let note = json_call(
+        &d.h.app,
+        "POST",
+        "/api/knowledge/notes",
+        Some(&d.cookie),
+        Some(new),
+    )
+    .await
+    .body;
+    let note_id = note["id"].as_str().unwrap();
+    let run = cases(&d, note_id).await;
+    assert_eq!(run["results"][0]["passed"], false);
+    assert_eq!(run["results"][0]["actual"], 140.0);
+    let approve = format!("/api/knowledge/notes/{note_id}/approve");
+    let reply = json_call(&d.h.app, "POST", &approve, Some(&d.cookie), None).await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+    assert!(
+        reply.body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Refunds don't count")
+    );
+    let fixed = json!({ "title": "Settled revenue", "body": "",
+        "definition": { "formula": "SUM(order.amount) WHERE [[Settled orders only]]",
+            "cases": [{ "name": "Refunds don't count", "rows": { "order": rows }, "expect": 100 }] } });
+    for (method, action, body) in [("PUT", "draft", Some(fixed)), ("POST", "submit", None)] {
+        let path = format!("/api/knowledge/notes/{note_id}/{action}");
+        let reply = json_call(&d.h.app, method, &path, Some(&d.cookie), body).await;
+        assert_eq!(reply.status, StatusCode::OK, "{action}: {}", reply.body);
+    }
+    let reply = json_call(&d.h.app, "POST", &approve, Some(&d.cookie), None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    assert_eq!(reply.body["state"], "approved");
+
+    // Rows that name something that isn't an entity explain themselves.
+    let odd = json!({ "kind": "metric", "title": "Odd", "body": "",
+        "definition": { "formula": "COUNT(order)",
+            "cases": [{ "name": "Typo", "rows": { "ordr": [{ "amount": 1 }] }, "expect": 1 }] } });
+    let note = json_call(
+        &d.h.app,
+        "POST",
+        "/api/knowledge/notes",
+        Some(&d.cookie),
+        Some(odd),
+    )
+    .await
+    .body;
+    let run = cases(&d, note["id"].as_str().unwrap()).await;
+    assert!(
+        run["results"][0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("isn't an entity")
+    );
+}
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn impact_lists_dependents_and_visuals(pool: PgPool) {
+    let d = demo(pool).await;
+    let graph = json_call(
+        &d.h.app,
+        "GET",
+        "/api/knowledge/graph",
+        Some(&d.cookie),
+        None,
+    )
+    .await
+    .body;
+    let impact = |title: &str| {
+        let id = named(&graph["nodes"], title)["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (app, cookie) = (d.h.app.clone(), d.cookie.clone());
+        async move {
+            json_call(
+                &app,
+                "GET",
+                &format!("/api/knowledge/notes/{id}/impact"),
+                Some(&cookie),
+                None,
+            )
+            .await
+            .body
+        }
+    };
+    let titles = |v: &Value, key: &str, field: &str| -> Vec<String> {
+        v[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x[field].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    let settled = impact("Settled orders only").await;
+    let dependents = titles(&settled, "dependents", "title");
+    for t in ["Net revenue", "Average order value", "Active customer"] {
+        assert!(dependents.contains(&t.to_owned()), "{dependents:?}");
+    }
+    let visuals = titles(&settled, "visuals", "title");
+    assert!(
+        visuals.contains(&"Net revenue by region".to_owned()),
+        "{visuals:?}"
+    );
+    assert!(
+        visuals.contains(&"Active customers".to_owned()),
+        "{visuals:?}"
+    );
+    assert_eq!(settled["hidden_visuals"], 0);
+
+    let aov = impact("Average order value").await;
+    assert_eq!(titles(&aov, "dependents", "title"), Vec::<String>::new());
+    let visuals = titles(&aov, "visuals", "title");
+    assert!(
+        visuals.contains(&"Avg order value".to_owned()),
+        "{visuals:?}"
+    );
+    assert!(
+        !visuals.contains(&"Active customers".to_owned()),
+        "{visuals:?}"
+    );
 }

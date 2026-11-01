@@ -86,6 +86,40 @@ test("a note goes from draft to approved, and a change can be turned down", asyn
   );
 });
 
+test("a definition can't be approved while an example case fails", async ({ page }) => {
+  await signInDemo(page);
+  await openLogic(page);
+  const title = `Settled revenue ${Date.now()}`;
+  await page.getByRole("button", { name: "+ New note" }).click();
+  const editor = page.getByTestId("note-editor");
+  await editor.getByLabel("Title").fill(title);
+  await editor.getByLabel("Formula").fill("SUM(order.amount)");
+  await editor.getByRole("button", { name: "Start from an example" }).click();
+  await expect(editor.getByLabel("Example cases")).toHaveValue(/Refunds don't count/);
+  await editor.getByRole("button", { name: "Submit for review" }).click();
+
+  const panel = page.getByTestId("note-panel");
+  await expect(panel.getByRole("heading", { name: title })).toBeVisible();
+  const cases = panel.getByRole("region", { name: "Example cases" });
+  await expect(cases).toContainText("Expected 100, got 140.");
+  await expect(panel.getByRole("button", { name: "Approve" })).toBeDisabled();
+  await expect(panel.getByRole("region", { name: "Impact" })).toContainText(
+    "Nothing else uses it yet.",
+  );
+
+  // Fixed, it passes and can be approved.
+  await editor.getByLabel("Formula").fill("SUM(order.amount) WHERE [[Settled orders only]]");
+  await editor.getByRole("button", { name: "Submit for review" }).click();
+  await expect(cases).toContainText("Gives 100, as expected.");
+  await panel.getByRole("button", { name: "Approve" }).click();
+  await expect(panel).toContainText("Approved");
+
+  await page.request.post(
+    `${process.env.GATEWAY_URL ?? "http://localhost:8080"}/api/knowledge/notes/${await noteId(page)}/deprecate`,
+    { data: { deprecated: true }, headers: { origin: "http://localhost:3000" } },
+  );
+});
+
 test("a link to an unwritten note offers to create it", async ({ page }) => {
   await signInDemo(page);
   await openLogic(page);

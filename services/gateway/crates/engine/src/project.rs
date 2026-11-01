@@ -412,7 +412,7 @@ impl ProjectDb {
     }
 }
 
-fn to_value(p: &ParamValue) -> Value {
+pub(crate) fn to_value(p: &ParamValue) -> Value {
     match p {
         ParamValue::Bool(b) => Value::Boolean(*b),
         ParamValue::BigInt(i) => Value::BigInt(*i),

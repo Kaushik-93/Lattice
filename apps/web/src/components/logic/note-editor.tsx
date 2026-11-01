@@ -8,10 +8,16 @@ import { Button } from "@/components/ui/button";
 import { useCreateNote, useNote, useNoteAction } from "@/lib/knowledge/api";
 import { diffLines, sentences, type DiffLine } from "@/lib/knowledge/diff";
 import { linkQueryAt } from "@/lib/knowledge/links";
-import { COMPUTABLE, KIND_LABEL, STATE_PILL } from "@/lib/knowledge/style";
+import {
+  FIELDS,
+  caseTemplate,
+  definitionFrom,
+  definitionLines,
+  fieldsOf,
+  type DefinitionFields,
+} from "@/lib/knowledge/definition";
+import { KIND_LABEL, STATE_PILL } from "@/lib/knowledge/style";
 import { cn } from "@/lib/utils";
-
-import { formulaOf } from "./note-panel";
 
 export type EditorTarget =
   { mode: "new"; title?: string; projectId?: string | null } | { mode: "edit"; noteId: string };
@@ -77,25 +83,26 @@ function EditorForm({
     base?.title ?? (target.mode === "new" ? (target.title ?? "") : ""),
   );
   const [body, setBody] = useState(base?.body ?? "");
-  const [formula, setFormula] = useState(formulaOf(base));
+  const baseDefinition = base?.definition as Record<string, unknown> | null | undefined;
+  const [fields, setFields] = useState<DefinitionFields>(() => fieldsOf(baseDefinition));
   const [changeNote, setChangeNote] = useState(note?.open?.change_note ?? "");
   const create = useCreateNote();
   const action = useNoteAction(note?.id ?? "");
   const ids = {
     title: useId(),
     body: useId(),
-    formula: useId(),
     note: useId(),
     kind: useId(),
     scope: useId(),
     team: useId(),
   };
-  const computable = COMPUTABLE.includes(kind);
+  const built = definitionFrom(kind, fields, baseDefinition);
+  const definition = built.definition;
   const error = create.error ?? action.error;
   const busy = create.isPending || action.isPending;
 
-  const definition = computable && formula.trim() ? { formula: formula.trim() } : undefined;
   const save = async (submit: boolean) => {
+    if (built.error) return;
     if (!note) {
       const created = await create.mutateAsync({
         kind,
@@ -122,9 +129,15 @@ function EditorForm({
     () => (live ? diffLines(sentences(live.body), sentences(body)) : []),
     [live, body],
   );
-  const formulaDiff = useMemo(
-    () => (live ? diffLines(formulaOf(live), formula) : []),
-    [live, formula],
+  const definitionDiff = useMemo(
+    () =>
+      live
+        ? diffLines(
+            definitionLines(live.definition as Record<string, unknown> | null).join("\n"),
+            definitionLines(definition).join("\n"),
+          )
+        : [],
+    [live, definition],
   );
   const changed = (d: DiffLine[]) => d.some((l) => l.kind !== "same");
 
@@ -255,23 +268,13 @@ function EditorForm({
               Type [[ to link another note, e.g. [[Customer]].
             </span>
           </div>
-          {computable && (
-            <label htmlFor={ids.formula} className="grid gap-1.5 text-[13px] font-semibold">
-              Formula
-              <textarea
-                id={ids.formula}
-                rows={3}
-                value={formula}
-                onChange={(e) => setFormula(e.target.value)}
-                placeholder="SUM(order.amount) WHERE order.status = 'settled'"
-                className={cn(field, "font-mono text-[13px]")}
-              />
-              <span className="text-xs font-normal text-muted-foreground">
-                Checked and compiled to SQL once the expression language lands (slice 3.2).
-              </span>
-            </label>
+          <DefinitionEditor kind={kind} fields={fields} onChange={setFields} />
+          {built.error && (
+            <p role="alert" className="text-sm text-destructive">
+              {built.error}
+            </p>
           )}
-          {live && (changed(bodyDiff) || changed(formulaDiff)) && (
+          {live && (changed(bodyDiff) || changed(definitionDiff)) && (
             <div className="grid gap-1.5" data-testid="note-diff">
               <span className="text-[13px] font-semibold">
                 Changes from the published version (v{live.version})
@@ -279,8 +282,8 @@ function EditorForm({
               <DiffBlock
                 lines={[
                   ...bodyDiff,
-                  ...(changed(formulaDiff)
-                    ? [{ kind: "same" as const, text: "" }, ...formulaDiff]
+                  ...(changed(definitionDiff)
+                    ? [{ kind: "same" as const, text: "" }, ...definitionDiff]
                     : []),
                 ]}
               />
@@ -509,3 +512,174 @@ function History({ note }: { note: NoteDetail }) {
     </ol>
   );
 }
+
+const code = cn(field, "font-mono text-[13px]");
+
+/** The computable part of a note, by kind: a metric's formula, a rule's condition, a
+ * dimension's column, a relationship's ends, and example cases. Checked by the gateway on save. */
+function DefinitionEditor({
+  kind,
+  fields,
+  onChange,
+}: {
+  kind: NoteKind;
+  fields: DefinitionFields;
+  onChange: (f: DefinitionFields) => void;
+}) {
+  const id = useId();
+  const has = FIELDS[kind];
+  const set = (patch: Partial<DefinitionFields>) => onChange({ ...fields, ...patch });
+  const hint = "text-xs font-normal text-muted-foreground";
+  if (has.length === 0) return null;
+  return (
+    <div className="grid gap-4">
+      {has.includes("formula") && (
+        <label htmlFor={`${id}-formula`} className="grid gap-1.5 text-[13px] font-semibold">
+          Formula
+          <textarea
+            id={`${id}-formula`}
+            rows={3}
+            value={fields.formula}
+            onChange={(e) => set({ formula: e.target.value })}
+            placeholder="SUM(order.amount) WHERE [[Settled orders only]]"
+            className={code}
+          />
+          <span className={hint}>
+            Aggregate one entity: SUM, AVG, MIN, MAX, COUNT, COUNT DISTINCT, with WHERE and [[other
+            metrics or rules]].
+          </span>
+        </label>
+      )}
+      {has.includes("condition") && (
+        <label htmlFor={`${id}-condition`} className="grid gap-1.5 text-[13px] font-semibold">
+          Condition
+          <textarea
+            id={`${id}-condition`}
+            rows={2}
+            value={fields.condition}
+            onChange={(e) => set({ condition: e.target.value })}
+            placeholder="order.status = 'settled'"
+            className={code}
+          />
+        </label>
+      )}
+      {has.includes("always") && (
+        <label className="flex items-start gap-2 text-[13px]">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={fields.always}
+            onChange={(e) => set({ always: e.target.checked })}
+          />
+          <span>
+            Applies to every query that reaches its entity
+            <span className={cn(hint, "block")}>
+              e.g. leaving internal accounts out of every customer number, once approved.
+            </span>
+          </span>
+        </label>
+      )}
+      {has.includes("fiscalMonth") && (
+        <label htmlFor={`${id}-fiscal`} className="grid gap-1.5 text-[13px] font-semibold">
+          Fiscal year starts in
+          <select
+            id={`${id}-fiscal`}
+            className={field}
+            value={fields.fiscalMonth}
+            onChange={(e) => set({ fiscalMonth: e.target.value })}
+          >
+            <option value="">— (not a calendar rule)</option>
+            {MONTHS.map((m, i) => (
+              <option key={m} value={String(i + 1)}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {has.includes("path") && (
+        <label htmlFor={`${id}-path`} className="grid gap-1.5 text-[13px] font-semibold">
+          Column
+          <input
+            id={`${id}-path`}
+            className={code}
+            value={fields.path}
+            onChange={(e) => set({ path: e.target.value })}
+            placeholder="order.region"
+          />
+        </label>
+      )}
+      {has.includes("from") && (
+        <div className="grid grid-cols-2 gap-3">
+          <label htmlFor={`${id}-from`} className="grid gap-1.5 text-[13px] font-semibold">
+            Many
+            <input
+              id={`${id}-from`}
+              className={code}
+              value={fields.from}
+              onChange={(e) => set({ from: e.target.value })}
+              placeholder="order.customer_id"
+            />
+          </label>
+          <label htmlFor={`${id}-to`} className="grid gap-1.5 text-[13px] font-semibold">
+            To one
+            <input
+              id={`${id}-to`}
+              className={code}
+              value={fields.to}
+              onChange={(e) => set({ to: e.target.value })}
+              placeholder="customer.customer_id"
+            />
+          </label>
+        </div>
+      )}
+      {has.includes("cases") && (
+        <div className="grid gap-1.5">
+          <div className="flex items-center justify-between">
+            <label htmlFor={`${id}-cases`} className="text-[13px] font-semibold">
+              Example cases
+            </label>
+            {!fields.cases.trim() && (
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline"
+                onClick={() => set({ cases: caseTemplate(kind) })}
+              >
+                Start from an example
+              </button>
+            )}
+          </div>
+          <textarea
+            id={`${id}-cases`}
+            rows={fields.cases ? 8 : 2}
+            value={fields.cases}
+            onChange={(e) => set({ cases: e.target.value })}
+            placeholder="[ ]"
+            className={code}
+            spellCheck={false}
+          />
+          <span className={hint}>
+            A few rows per entity and the answer they should give
+            {kind === "rule" ? " (how many rows the rule keeps)" : ""}. It can only be approved
+            while every case passes.
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];

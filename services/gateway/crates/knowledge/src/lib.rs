@@ -432,6 +432,92 @@ fn validate_definition(kind: NoteKind, definition: Option<&serde_json::Value>) -
         }
         _ => {}
     }
+    validate_cases(kind, d)
+}
+
+/// Most example cases a definition carries, and rows per entity in one case.
+pub const MAX_CASES: usize = 20;
+pub const MAX_CASE_ROWS: usize = 50;
+
+/// Example cases (docs/adr/0006): a few rows per entity and the answer the definition must give
+/// on them. `{"name", "rows": {"order": [{"amount": 100, "status": "settled"}]}, "expect": 100}`;
+/// a rule's case also names the entity to count (`"count": "order"`) and expects how many of
+/// its rows the rule keeps. `"today"` pins relative dates.
+fn validate_cases(kind: NoteKind, d: &serde_json::Value) -> Result<()> {
+    let Some(cases) = d.get("cases") else {
+        return Ok(());
+    };
+    let invalid = |m: String| Err(KnowledgeError::Invalid(m));
+    let Some(cases) = cases.as_array() else {
+        return invalid("\"cases\" is a list.".into());
+    };
+    if !matches!(kind, NoteKind::Metric | NoteKind::Rule) {
+        return invalid("Only metrics and rules have example cases.".into());
+    }
+    if cases.len() > MAX_CASES {
+        return invalid(format!("At most {MAX_CASES} example cases."));
+    }
+    for (i, case) in cases.iter().enumerate() {
+        let n = i + 1;
+        let name = case.get("name").and_then(|v| v.as_str()).map(str::trim);
+        if !name.is_some_and(|s| (1..=120).contains(&s.chars().count())) {
+            return invalid(format!(
+                "Example case {n} needs a name (up to 120 characters)."
+            ));
+        }
+        let Some(rows) = case.get("rows").and_then(|v| v.as_object()) else {
+            return invalid(format!(
+                "Example case {n} needs rows: {{\"entity\": [{{…}}]}}."
+            ));
+        };
+        for (entity, list) in rows {
+            let Some(list) = list.as_array() else {
+                return invalid(format!("Example case {n}: rows of {entity} are a list."));
+            };
+            if list.len() > MAX_CASE_ROWS {
+                return invalid(format!(
+                    "Example case {n}: at most {MAX_CASE_ROWS} rows of {entity}."
+                ));
+            }
+            for row in list {
+                let scalars = row.as_object().is_some_and(|o| {
+                    !o.is_empty() && o.values().all(|v| !v.is_array() && !v.is_object())
+                });
+                if !scalars {
+                    return invalid(format!(
+                        "Example case {n}: each row of {entity} maps columns to plain values."
+                    ));
+                }
+            }
+        }
+        match case.get("expect") {
+            Some(v) if v.is_number() || v.is_null() => {}
+            _ => {
+                return invalid(format!(
+                    "Example case {n} needs \"expect\": a number or null."
+                ));
+            }
+        }
+        if kind == NoteKind::Rule
+            && !case
+                .get("count")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty())
+        {
+            return invalid(format!(
+                "Example case {n}: a rule's case says which entity's rows to count (\"count\")."
+            ));
+        }
+        if let Some(today) = case.get("today")
+            && !today
+                .as_str()
+                .is_some_and(|t| chrono::NaiveDate::parse_from_str(t, "%Y-%m-%d").is_ok())
+        {
+            return invalid(format!(
+                "Example case {n}: \"today\" is a date, YYYY-MM-DD."
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -1096,6 +1182,16 @@ pub async fn submit(pool: &PgPool, viewer: &Viewer, note_id: Uuid) -> Result<()>
 /// Approves the change in review: it becomes the live version (the previous one is kept as
 /// superseded).
 pub async fn approve(pool: &PgPool, viewer: &Viewer, note_id: Uuid) -> Result<()> {
+    approve_version(pool, viewer, note_id, None).await
+}
+
+/// Approves the pending revision, provided it is still `version` (what the reviewer checked).
+pub async fn approve_version(
+    pool: &PgPool,
+    viewer: &Viewer,
+    note_id: Uuid,
+    version: Option<i32>,
+) -> Result<()> {
     let mut tx = pool.begin().await?;
     let note = access(&mut tx, viewer, note_id).await?;
     if !viewer.can_review(note.project_id, note.owner_id) {
@@ -1112,6 +1208,11 @@ pub async fn approve(pool: &PgPool, viewer: &Viewer, note_id: Uuid) -> Result<()
             "There's nothing waiting for review.".into(),
         ));
     };
+    if version.is_some_and(|v| v != pending.version) {
+        return Err(KnowledgeError::Conflict(
+            "The proposal changed while you were reviewing it.".into(),
+        ));
+    }
     sqlx::query!(
         "UPDATE knowledge_revisions SET status = 'superseded'
          WHERE note_id = $1 AND status = 'approved'",
