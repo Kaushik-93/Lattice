@@ -24,6 +24,7 @@ const header: ResultHeader = {
     { name: "region", role: "dimension" },
     { name: "sum_amount", role: "measure" },
   ],
+  fingerprint: "00ff11ee22dd33cc",
   timings: {
     compile_ms: 0.04,
     cache_ms: 0.3,

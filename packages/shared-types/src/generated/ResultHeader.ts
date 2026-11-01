@@ -13,4 +13,8 @@ truncated: boolean,
 /**
  * Served from the result cache.
  */
-cached: boolean, columns: Array<OutputColumn>, timings: QueryTimings, };
+cached: boolean, columns: Array<OutputColumn>, 
+/**
+ * Changes exactly when the result's data may differ (see `query::fingerprint`).
+ */
+fingerprint: string, timings: QueryTimings, };

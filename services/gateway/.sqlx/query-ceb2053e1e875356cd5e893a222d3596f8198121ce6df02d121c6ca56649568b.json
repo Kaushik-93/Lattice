@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, spec, layout FROM visuals WHERE sheet_id = $1 ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "spec",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "layout",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ceb2053e1e875356cd5e893a222d3596f8198121ce6df02d121c6ca56649568b"
+}

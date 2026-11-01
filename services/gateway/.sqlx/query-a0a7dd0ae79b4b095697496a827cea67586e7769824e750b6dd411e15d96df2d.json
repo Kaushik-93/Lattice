@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT link_audience, link_token, link_expires_at, allow_export, track_views,\n                  allow_copilot,\n                  (SELECT count(*) FROM sheet_views v WHERE v.sheet_id = s.id) AS \"view_count!\"\n           FROM sheets s WHERE id = $1 AND project_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "link_audience",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "link_token",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "link_expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "allow_export",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "track_views",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "allow_copilot",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "view_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a0a7dd0ae79b4b095697496a827cea67586e7769824e750b6dd411e15d96df2d"
+}

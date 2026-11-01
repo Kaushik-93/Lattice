@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO visuals (id, sheet_id, position, spec, layout)\n         SELECT t.id, $1, t.position, t.spec, t.layout\n         FROM UNNEST($2::uuid[], $3::int[], $4::jsonb[], $5::jsonb[]) AS t(id, position, spec, layout)\n         ON CONFLICT (id) DO UPDATE\n            SET position = EXCLUDED.position, spec = EXCLUDED.spec, layout = EXCLUDED.layout\n            WHERE visuals.sheet_id = EXCLUDED.sheet_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Int4Array",
+        "JsonbArray",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3b33a10f49a9e0e4056c70e0b7fa41ea63abd2113506616e7dec7eaab5bff66"
+}

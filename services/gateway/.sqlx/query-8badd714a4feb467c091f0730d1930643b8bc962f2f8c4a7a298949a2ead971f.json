@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sheets SET\n            link_audience = $3::text,\n            link_token = CASE WHEN $3::text = 'off' THEN NULL\n                              WHEN link_token IS NULL OR $4::bool THEN $5::text\n                              ELSE link_token END,\n            link_expires_at = CASE WHEN $3::text = 'off' THEN NULL ELSE $6::timestamptz END,\n            allow_export = $7, track_views = $8, allow_copilot = $9\n         WHERE id = $1 AND project_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bool",
+        "Text",
+        "Timestamptz",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8badd714a4feb467c091f0730d1930643b8bc962f2f8c4a7a298949a2ead971f"
+}

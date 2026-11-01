@@ -10,6 +10,7 @@ use lattice_security::ProjectRole;
 use lattice_security::WorkspaceRole;
 use lattice_security::identity::{self, NewAccount};
 use lattice_security::password::hash_password;
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use uuid::Uuid;
@@ -111,20 +112,174 @@ pub async fn seed_demo(pool: &PgPool) -> Result<Option<DemoSeed>, ApiError> {
     }))
 }
 
-/// Adds the generated "Acme Retail orders" dataset to the demo's Revenue Analytics project.
+/// Adds the generated "Acme Retail orders" dataset to the demo's Revenue Analytics project,
+/// with sheets shaped like the design's.
 pub async fn seed_demo_data(
     state: &AppState,
     seed: &DemoSeed,
     orders: u64,
 ) -> Result<Uuid, ApiError> {
-    generated_source(
+    let source = generated_source(
         state,
         seed.revenue_project,
         seed.admin_id,
         "Acme Retail orders (demo)",
         orders,
     )
-    .await
+    .await?;
+    let table = sqlx::query_scalar!(
+        "SELECT id FROM source_tables WHERE source_id = $1 AND table_name = 'orders'",
+        source
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    seed_demo_sheets(state, seed, table).await?;
+    Ok(source)
+}
+
+/// "Revenue Review" (screen 06 of the design), "Regional ops" and "Order explorer" (a million
+/// points on a WebGL scatter plot).
+async fn seed_demo_sheets(state: &AppState, seed: &DemoSeed, orders: Uuid) -> Result<(), ApiError> {
+    let fiscal_q3 = json!({
+        "id": Uuid::new_v4(), "column": "order_date", "label": "Fiscal Q3 · Aug–Oct",
+        "kind": "date_range", "value": ["2026-08-01", "2026-10-31"]
+    });
+    let regions =
+        json!({ "id": Uuid::new_v4(), "column": "region", "label": "Region", "kind": "values" });
+    let sum = json!({ "column": "amount", "agg": "sum" });
+    let dim = |column: &str| json!({ "column": column, "bucket": null });
+    let kpi = |title: &str, measure: Value, format: &str| {
+        json!({ "kind": "kpi", "title": title, "measures": [measure],
+                "options": { "compare": "order_date", "format": format } })
+    };
+    let sheets = [
+        (
+            "Revenue Review",
+            vec![fiscal_q3.clone(), regions.clone()],
+            vec![
+                (kpi("Net revenue", sum.clone(), "currency"), [0, 0, 3, 2]),
+                (
+                    kpi("Orders", json!({ "agg": "count" }), "number"),
+                    [3, 0, 3, 2],
+                ),
+                (
+                    kpi(
+                        "Avg order value",
+                        json!({ "column": "amount", "agg": "avg" }),
+                        "currency",
+                    ),
+                    [6, 0, 3, 2],
+                ),
+                (
+                    kpi(
+                        "Active customers",
+                        json!({ "column": "customer_id", "agg": "approx_count_distinct" }),
+                        "number",
+                    ),
+                    [9, 0, 3, 2],
+                ),
+                (
+                    json!({ "kind": "area", "title": "Net revenue by week",
+                         "x": { "column": "order_date", "bucket": "week" }, "measures": [sum.clone()],
+                         "options": { "format": "currency" } }),
+                    [0, 2, 12, 4],
+                ),
+                (
+                    json!({ "kind": "bar", "title": "Net revenue by region", "x": dim("region"),
+                         "drill": [dim("category"), dim("channel")], "measures": [sum.clone()],
+                         "options": { "format": "currency" } }),
+                    [0, 6, 6, 4],
+                ),
+                (
+                    json!({ "kind": "table", "title": "Top categories", "x": dim("category"),
+                         "measures": [sum.clone(), { "agg": "count" }],
+                         "sort": { "by": "value", "dir": "desc" }, "limit": 10,
+                         "options": { "format": "currency" } }),
+                    [6, 6, 6, 4],
+                ),
+            ],
+        ),
+        (
+            "Regional ops",
+            vec![regions.clone()],
+            vec![
+                (
+                    json!({ "kind": "slicer", "title": "Region", "x": dim("region") }),
+                    [0, 0, 3, 4],
+                ),
+                (
+                    json!({ "kind": "heatmap", "title": "Revenue by category and region",
+                         "x": dim("category"), "series": dim("region"), "measures": [sum.clone()],
+                         "options": { "format": "currency" } }),
+                    [3, 0, 9, 4],
+                ),
+                (
+                    json!({ "kind": "donut", "title": "Channel mix", "x": dim("channel"),
+                         "measures": [sum.clone()], "options": { "format": "currency" } }),
+                    [0, 4, 4, 4],
+                ),
+                (
+                    json!({ "kind": "histogram", "title": "Order value distribution",
+                         "x": { "column": "amount", "bucket": null, "bin": 50.0 } }),
+                    [4, 4, 8, 4],
+                ),
+                (
+                    json!({ "kind": "pivot", "title": "Monthly revenue by region",
+                         "x": { "column": "order_date", "bucket": "month" }, "series": dim("region"),
+                         "measures": [sum.clone()], "options": { "format": "currency" } }),
+                    [0, 8, 12, 5],
+                ),
+            ],
+        ),
+        (
+            "Order explorer",
+            vec![],
+            vec![
+                (
+                    json!({ "kind": "scatter", "title": "Every order: amount over time",
+                         "x": dim("order_date"), "columns": ["amount"], "series": dim("region"),
+                         "limit": 1_000_000 }),
+                    [0, 0, 12, 6],
+                ),
+                (
+                    json!({ "kind": "table", "title": "Orders",
+                         "columns": ["order_id", "order_date", "region", "category", "status", "amount"] }),
+                    [0, 6, 12, 5],
+                ),
+            ],
+        ),
+    ];
+    for (name, filters, visuals) in sheets {
+        let filters: Vec<lattice_sheets::SheetFilterDef> =
+            serde_json::from_value(Value::Array(filters))?;
+        let id = lattice_sheets::create(
+            &state.pool,
+            seed.revenue_project,
+            name,
+            &filters,
+            seed.admin_id,
+        )
+        .await?;
+        let visuals = visuals
+            .into_iter()
+            .map(|(mut spec, [x, y, w, h])| {
+                spec["table_id"] = json!(orders);
+                Ok(lattice_sheets::Visual {
+                    id: Uuid::new_v4(),
+                    spec: serde_json::from_value(spec)?,
+                    layout: lattice_sheets::Layout { x, y, w, h },
+                })
+            })
+            .collect::<Result<Vec<_>, serde_json::Error>>()?;
+        let save = lattice_sheets::SaveSheet {
+            version: 1,
+            name: name.into(),
+            filters,
+            visuals,
+        };
+        lattice_sheets::save(&state.pool, seed.revenue_project, id, &save, seed.admin_id).await?;
+    }
+    Ok(())
 }
 
 /// Creates a "Benchmark" project for the demo admin with `orders` generated rows (the phase 1

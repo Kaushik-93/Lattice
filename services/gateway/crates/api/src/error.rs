@@ -111,6 +111,21 @@ impl From<lattice_connectors::ConnectorError> for ApiError {
     }
 }
 
+impl From<lattice_sheets::SheetError> for ApiError {
+    fn from(err: lattice_sheets::SheetError) -> Self {
+        use lattice_sheets::SheetError as E;
+        match err {
+            E::Conflict { .. } => ApiError::Conflict(
+                "Someone else saved this sheet since you opened it. Reload to see their changes."
+                    .into(),
+            ),
+            E::Invalid(m) => ApiError::BadRequest(m),
+            E::TooMany => ApiError::Unprocessable(err.to_string()),
+            other => ApiError::internal(other),
+        }
+    }
+}
+
 impl From<axum::extract::multipart::MultipartError> for ApiError {
     fn from(err: axum::extract::multipart::MultipartError) -> Self {
         ApiError::BadRequest(format!("upload failed: {}", err.body_text()))

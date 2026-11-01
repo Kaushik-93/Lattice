@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sheets s SET position = t.ord::int\n         FROM UNNEST($2::uuid[]) WITH ORDINALITY AS t(id, ord)\n         WHERE s.id = t.id AND s.project_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a1f01ddd2844d18acdc6417b5025bc177f7e9fb0cd70fa881e85f97172c4d7a"
+}

@@ -156,6 +156,53 @@ pub struct SourceListResponse {
     pub sources: Vec<lattice_catalog::SourceSummary>,
 }
 
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct SheetListResponse {
+    pub sheets: Vec<lattice_sheets::SheetSummary>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct CreateSheetRequest {
+    pub name: String,
+    #[serde(default)]
+    #[ts(optional, as = "Option<Vec<lattice_sheets::SheetFilterDef>>")]
+    pub filters: Vec<lattice_sheets::SheetFilterDef>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct SaveSheetResponse {
+    #[ts(type = "number")]
+    pub version: i64,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct ReorderSheetsRequest {
+    pub ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct AddSheetMemberRequest {
+    pub email: String,
+}
+
+/// What a share link opens (design screen 08).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct SharedSheetView {
+    pub sheet: lattice_sheets::Sheet,
+    pub project_name: String,
+    pub shared_by: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub allow_export: bool,
+    /// When the newest of the sheet's sources last synced.
+    pub data_refreshed_at: Option<DateTime<Utc>>,
+}
+
 /// Adds a PostgreSQL or MySQL database as a live source.
 #[derive(Debug, Deserialize, TS)]
 #[ts(export)]
@@ -194,6 +241,36 @@ pub enum ClientMessage {
     Cancel {
         batch_id: u32,
     },
+    /// A sheet's visuals in one message, compiled by the gateway against the sheet's state
+    /// (filters, cross-filter selections, drill paths). Results are framed per visual, with
+    /// `:compare` appended for a KPI's previous-period query.
+    SheetBatch {
+        batch_id: u32,
+        project_id: Uuid,
+        #[serde(default)]
+        context: lattice_visuals::SheetContext,
+        visuals: Vec<lattice_visuals::VisualRequest>,
+    },
+    /// The visuals of a sheet opened through its link. Needs no project role and no sign-in
+    /// for public links; runs only that sheet's saved visuals.
+    SharedBatch {
+        batch_id: u32,
+        token: String,
+        #[serde(default)]
+        context: lattice_visuals::SheetContext,
+        visuals: Vec<SharedVisualRequest>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedVisualRequest {
+    pub id: Uuid,
+    #[serde(default)]
+    pub drill: Vec<lattice_planner::Scalar>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub offset: Option<u32>,
 }
 
 /// Gateway → browser JSON messages on `/ws`. Query results arrive as binary frames instead:
@@ -204,7 +281,8 @@ pub enum ClientMessage {
 pub enum ServerMessage {
     Hello {
         gateway_version: String,
-        user_id: Uuid,
+        /// None on an anonymous socket (a public sheet link).
+        user_id: Option<Uuid>,
     },
     Pong {
         id: u32,
@@ -243,6 +321,8 @@ pub struct ResultHeader {
     /// Served from the result cache.
     pub cached: bool,
     pub columns: Vec<lattice_planner::OutputColumn>,
+    /// Changes exactly when the result's data may differ (see `query::fingerprint`).
+    pub fingerprint: String,
     pub timings: QueryTimings,
 }
 

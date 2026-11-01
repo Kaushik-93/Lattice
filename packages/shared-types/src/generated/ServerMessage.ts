@@ -4,7 +4,11 @@
  * Gateway → browser JSON messages on `/ws`. Query results arrive as binary frames instead:
  * `[u32 little-endian header length][ResultHeader JSON][Arrow IPC stream]`.
  */
-export type ServerMessage = { "type": "hello", gateway_version: string, user_id: string, } | { "type": "pong", id: number, 
+export type ServerMessage = { "type": "hello", gateway_version: string, 
+/**
+ * None on an anonymous socket (a public sheet link).
+ */
+user_id: string | null, } | { "type": "pong", id: number, 
 /**
  * Echoed so the client computes round-trip time without keeping state.
  */

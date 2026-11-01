@@ -27,7 +27,9 @@ lattice-engine = { path = "crates/engine" }
 lattice-planner = { path = "crates/planner" }
 lattice-project = { path = "crates/project" }
 lattice-security = { path = "crates/security" }
+lattice-sheets = { path = "crates/sheets" }
 lattice-telemetry = { path = "crates/telemetry" }
+lattice-visuals = { path = "crates/visuals" }
 
 aes-gcm = "0.10"
 anyhow = "1"

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max(s.synced_at) FROM sources s\n         JOIN source_tables t ON t.source_id = s.id\n         WHERE t.id = ANY($1) AND s.project_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2cf75c944b94a4a4e7ea2bad808902e9494fcbcfee8d9f8ce3cb7640ac3bade5"
+}

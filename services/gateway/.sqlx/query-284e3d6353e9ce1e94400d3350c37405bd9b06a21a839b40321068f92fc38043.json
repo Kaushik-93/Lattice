@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.project_id, s.link_audience, s.link_expires_at, s.allow_export,\n                s.track_views, p.workspace_id, p.name AS project_name,\n                u.display_name AS \"shared_by?\"\n         FROM sheets s\n         JOIN projects p ON p.id = s.project_id\n         LEFT JOIN users u ON u.id = COALESCE(s.updated_by, s.created_by)\n         WHERE s.link_token = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "link_audience",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "link_expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "allow_export",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "track_views",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "project_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "shared_by?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "284e3d6353e9ce1e94400d3350c37405bd9b06a21a839b40321068f92fc38043"
+}

@@ -42,18 +42,18 @@ struct CachedMeta {
     truncated: bool,
 }
 
-pub async fn run(
+/// A catalog table ready to compile against.
+pub struct Resolved {
+    pub schema: TableSchema,
+    data_version: i64,
+}
+
+pub async fn resolve(
     state: &AppState,
     project_id: Uuid,
-    batch_id: u32,
-    query_id: String,
-    query: TableQuery,
-    cancel: CancellationToken,
-) -> Result<QueryOutcome, QueryFailure> {
-    let started = Instant::now();
-    let mut timings = QueryTimings::default();
-
-    let table = catalog::resolve_table(&state.pool, project_id, query.table_id)
+    table_id: Uuid,
+) -> Result<Resolved, QueryFailure> {
+    let table = catalog::resolve_table(&state.pool, project_id, table_id)
         .await
         .map_err(|e| QueryFailure::new("internal", e.to_string()))?
         .ok_or_else(|| QueryFailure::new("not_found", "That table isn't in this project."))?;
@@ -73,10 +73,45 @@ pub async fn run(
             })
             .collect(),
     };
+    Ok(Resolved {
+        schema,
+        data_version: table.data_version,
+    })
+}
 
+pub async fn run(
+    state: &AppState,
+    project_id: Uuid,
+    batch_id: u32,
+    query_id: String,
+    query: TableQuery,
+    cancel: CancellationToken,
+) -> Result<QueryOutcome, QueryFailure> {
+    let started = Instant::now();
+    let table = resolve(state, project_id, query.table_id).await?;
+    execute(
+        state, project_id, batch_id, query_id, &table, &query, &cancel, started,
+    )
+    .await
+}
+
+/// Runs a query against an already-resolved table. `started` is when the caller began
+/// working on it, so `total_ms` includes resolution.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute(
+    state: &AppState,
+    project_id: Uuid,
+    batch_id: u32,
+    query_id: String,
+    table: &Resolved,
+    query: &TableQuery,
+    cancel: &CancellationToken,
+    started: Instant,
+) -> Result<QueryOutcome, QueryFailure> {
+    let mut timings = QueryTimings::default();
     let t = Instant::now();
-    let compiled =
-        compile(&query, &schema).map_err(|e| QueryFailure::new("invalid_query", e.to_string()))?;
+    let compiled = compile(query, &table.schema)
+        .map_err(|e| QueryFailure::new("invalid_query", e.to_string()))?;
     timings.compile_ms = ms(t.elapsed());
 
     let params = format!("{:?}", compiled.params);
@@ -103,6 +138,7 @@ pub async fn run(
                 truncated: meta.truncated,
                 cached: true,
                 columns: compiled.columns,
+                fingerprint: fingerprint(&key),
                 timings,
             },
             ipc,
@@ -113,7 +149,7 @@ pub async fn run(
         .await
         .map_err(|e| QueryFailure::new("unavailable", e.to_string()))?;
     let out = db
-        .query(compiled.sql, compiled.params, &cancel)
+        .query(compiled.sql, compiled.params, cancel)
         .await
         .map_err(|e| match e {
             EngineError::Cancelled => QueryFailure::Cancelled,
@@ -135,6 +171,7 @@ pub async fn run(
     // Populate the cache off the response path.
     let cache = state.cache.clone();
     let packed = pack(&CachedMeta { rows, truncated }, &ipc);
+    let fingerprint = fingerprint(&key);
     tokio::spawn(async move { cache.put(&key, &packed).await });
 
     timings.total_ms = ms(started.elapsed());
@@ -146,6 +183,7 @@ pub async fn run(
             truncated,
             cached: false,
             columns: compiled.columns,
+            fingerprint,
             timings,
         },
         ipc,
@@ -188,6 +226,17 @@ fn unpack(bytes: &[u8]) -> Option<(CachedMeta, Vec<u8>)> {
     Some((meta, bytes.get(4 + len..)?.to_vec()))
 }
 
+/// Identifies a result by everything that determines it (the cache key's hash), so a client
+/// can skip re-rendering when a re-run returns the same data.
+fn fingerprint(key: &str) -> String {
+    key.rsplit(':')
+        .next()
+        .unwrap_or(key)
+        .chars()
+        .take(16)
+        .collect()
+}
+
 fn ms(d: Duration) -> f64 {
     (d.as_secs_f64() * 1e6).round() / 1e3
 }
@@ -205,6 +254,7 @@ mod tests {
             truncated: false,
             cached: true,
             columns: vec![],
+            fingerprint: "0123abcd".into(),
             timings: QueryTimings::default(),
         };
         let bytes = frame(&header, b"ARROW");
@@ -214,6 +264,14 @@ mod tests {
             (3, "q1", b"ARROW".as_slice())
         );
         assert!(unframe(&bytes[..3]).is_none());
+    }
+
+    #[test]
+    fn fingerprints_are_the_cache_keys_hash() {
+        assert_eq!(
+            fingerprint("rc:v1:00ff11ee22dd33cc44bb"),
+            "00ff11ee22dd33cc"
+        );
     }
 
     #[test]

@@ -5,81 +5,17 @@
 
 mod common;
 
-use std::io::Cursor;
-use std::net::SocketAddr;
 use std::str::FromStr as _;
 use std::time::{Duration, Instant};
 
-use arrow::ipc::reader::StreamReader;
 use axum::http::StatusCode;
 use common::*;
-use futures_util::{SinkExt as _, StreamExt as _};
-use lattice_api::dto::ResultHeader;
+use futures_util::SinkExt as _;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use sqlx::postgres::PgConnectOptions;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use uuid::Uuid;
-
-type Socket =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
-async fn connect(addr: SocketAddr, cookie: &str) -> Socket {
-    let mut req = format!("ws://{addr}/ws").into_client_request().unwrap();
-    req.headers_mut().insert("cookie", cookie.parse().unwrap());
-    req.headers_mut().insert("origin", WEB.parse().unwrap());
-    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
-    let hello = ws.next().await.unwrap().unwrap();
-    assert!(hello.to_text().unwrap().contains("\"hello\""));
-    ws
-}
-
-enum Event {
-    Result(ResultHeader, usize),
-    Error(Value),
-    Done(Value),
-}
-
-/// Reads messages until `batch_done` for `batch_id`, returning everything for that batch.
-async fn until_done(ws: &mut Socket, batch_id: u32) -> Vec<Event> {
-    let mut events = Vec::new();
-    loop {
-        let message = tokio::time::timeout(Duration::from_secs(30), ws.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        match message {
-            Message::Binary(bytes) => {
-                let (header, ipc) = lattice_api::query::unframe(&bytes).unwrap();
-                let rows: usize = StreamReader::try_new(Cursor::new(ipc.to_vec()), None)
-                    .unwrap()
-                    .map(|b| b.unwrap().num_rows())
-                    .sum();
-                assert_eq!(rows, header.rows as usize, "header matches the Arrow data");
-                if header.batch_id == batch_id {
-                    events.push(Event::Result(header, rows));
-                }
-            }
-            Message::Text(text) => {
-                let v: Value = serde_json::from_str(text.as_str()).unwrap();
-                if v["batch_id"] != json!(batch_id) {
-                    continue;
-                }
-                match v["type"].as_str() {
-                    Some("query_error") => events.push(Event::Error(v)),
-                    Some("batch_done") => {
-                        events.push(Event::Done(v));
-                        return events;
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-}
 
 async fn send_batch(ws: &mut Socket, batch_id: u32, project: Uuid, queries: Value) {
     let msg = json!({ "type": "query_batch", "batch_id": batch_id, "project_id": project, "queries": queries });

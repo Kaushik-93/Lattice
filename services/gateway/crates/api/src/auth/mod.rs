@@ -46,6 +46,29 @@ impl FromRequestParts<AppState> for Authed {
     }
 }
 
+/// Extractor for handlers open to anonymous callers that behave differently when signed in
+/// (shared sheet links). Never rejects for a missing or stale session.
+pub struct MaybeAuthed(pub Option<Principal>);
+
+impl FromRequestParts<AppState> for MaybeAuthed {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
+        let Some(token) = CookieJar::from_headers(&parts.headers)
+            .get(SESSION_COOKIE)
+            .map(|c| c.value().to_owned())
+        else {
+            return Ok(MaybeAuthed(None));
+        };
+        let started = Instant::now();
+        let principal = state.sessions.lookup(&token).await?;
+        if let Some(timing) = parts.extensions.get::<ServerTiming>() {
+            timing.record("auth", started.elapsed());
+        }
+        Ok(MaybeAuthed(principal))
+    }
+}
+
 /// Creates a session for `account` and returns the jar with the session cookie set.
 pub(crate) async fn start_session(
     state: &AppState,

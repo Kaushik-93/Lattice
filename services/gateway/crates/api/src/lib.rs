@@ -10,6 +10,7 @@ pub mod middleware;
 pub mod query;
 pub mod routes;
 pub mod seed;
+pub mod sheets;
 pub mod sources;
 pub mod state;
 pub mod ws;
@@ -36,7 +37,7 @@ pub use config::Config;
 pub use state::{AppState, GATEWAY_VERSION, StartupError};
 
 use crate::auth::{oidc, password};
-use crate::routes::{health, projects, sources as source_routes};
+use crate::routes::{health, projects, sheets as sheet_routes, sources as source_routes};
 
 pub fn router(state: AppState) -> Router {
     // Brute-force brake on credential endpoints: bursts of 20, then one attempt per second per IP.
@@ -86,6 +87,30 @@ pub fn router(state: AppState) -> Router {
             "/projects/{id}/tables/{table_id}/profile",
             post(source_routes::profile),
         )
+        .route(
+            "/projects/{id}/sheets",
+            get(sheet_routes::list).post(sheet_routes::create),
+        )
+        .route("/projects/{id}/sheets/order", post(sheet_routes::reorder))
+        .route(
+            "/projects/{id}/sheets/{sheet_id}",
+            get(sheet_routes::get)
+                .put(sheet_routes::save)
+                .delete(sheet_routes::delete),
+        )
+        .route(
+            "/projects/{id}/sheets/{sheet_id}/sharing",
+            get(sheet_routes::get_sharing).put(sheet_routes::set_sharing),
+        )
+        .route(
+            "/projects/{id}/sheets/{sheet_id}/members",
+            post(sheet_routes::add_member),
+        )
+        .route(
+            "/projects/{id}/sheets/{sheet_id}/members/{user_id}",
+            axum::routing::delete(sheet_routes::remove_member),
+        )
+        .route("/shared/{token}", get(sheet_routes::shared))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),

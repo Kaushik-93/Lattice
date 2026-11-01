@@ -2279,7 +2279,9 @@ dependencies = [
  "lattice-planner",
  "lattice-project",
  "lattice-security",
+ "lattice-sheets",
  "lattice-telemetry",
+ "lattice-visuals",
  "object_store",
  "openidconnect",
  "redis",
@@ -2398,6 +2400,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lattice-sheets"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "lattice-planner",
+ "lattice-visuals",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "lattice-telemetry"
 version = "0.1.0"
 dependencies = [
@@ -2409,6 +2427,19 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lattice-visuals"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "lattice-planner",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "uuid",
 ]
 
 [[package]]
