@@ -6,6 +6,8 @@ const FINER: Record<TimeBucket, TimeBucket[]> = {
   month: ["day"],
   week: ["day"],
   day: [],
+  fiscal_year: ["fiscal_quarter", "month", "day"],
+  fiscal_quarter: ["month", "day"],
 };
 
 /** `x` and the levels a double-click drills into (the gateway's `drill_levels`). */
@@ -42,8 +44,10 @@ function addMonths(iso: string, months: number): string {
 export function bucketEnd(start: string, bucket: TimeBucket): string {
   switch (bucket) {
     case "year":
+    case "fiscal_year":
       return addDays(addMonths(start, 12), -1);
     case "quarter":
+    case "fiscal_quarter":
       return addDays(addMonths(start, 3), -1);
     case "month":
       return addDays(addMonths(start, 1), -1);

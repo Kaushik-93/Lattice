@@ -19,7 +19,7 @@ import { useSheetRunner } from "@/lib/sheets/runner";
 import { createSheetStore } from "@/lib/sheets/store";
 
 import { SheetEnvProvider, type SheetEnv } from "./sheet-env";
-import { SheetFilters } from "./sheet-filters";
+import { SheetFilters, usePresetDefaults } from "./sheet-filters";
 import { SheetGrid } from "./sheet-grid";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -162,9 +162,18 @@ function SharedBody({ token, view }: { token: string; view: SharedSheetView }) {
     [store, token],
   );
   const env = useMemo<SheetEnv>(
-    () => ({ store, results, target, canEdit: false, canExport: view.allow_export, fetchPage }),
-    [store, results, target, view.allow_export, fetchPage],
+    () => ({
+      store,
+      results,
+      target,
+      canEdit: false,
+      canExport: view.allow_export,
+      fetchPage,
+      fiscalStart: view.fiscal_year_start_month,
+    }),
+    [store, results, target, view.allow_export, fetchPage, view.fiscal_year_start_month],
   );
+  usePresetDefaults(store, view.fiscal_year_start_month);
 
   return (
     <SheetEnvProvider value={env}>

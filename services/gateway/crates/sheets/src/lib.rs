@@ -100,6 +100,21 @@ pub struct SheetFilterDef {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(optional, as = "Option<Vec<Scalar>>")]
     pub options: Vec<Scalar>,
+    /// A date range relative to today, worked out afresh whenever the sheet opens (on the
+    /// fiscal calendar); `value` then holds what it last resolved to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub preset: Option<DatePreset>,
+}
+
+/// Date ranges to date (docs/adr/0006 decision 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum DatePreset {
+    FiscalYearToDate,
+    FiscalQuarterToDate,
+    MonthToDate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -242,6 +257,12 @@ pub fn validate(save: &SaveSheet) -> Result<(), SheetError> {
         }
         if f.options.len() > 200 {
             return invalid("A filter offers at most 200 values.".into());
+        }
+        if f.preset.is_some() && f.kind != SheetFilterKind::DateRange {
+            return invalid(format!(
+                "Filter {:?}: only date ranges have presets.",
+                f.label
+            ));
         }
         let ok = match (&f.kind, &f.value) {
             (_, None) => true,
@@ -724,12 +745,18 @@ mod tests {
             label: "Fiscal Q3".into(),
             kind: SheetFilterKind::DateRange,
             options: vec![],
+            preset: None,
             value: Some(FilterValue::Many(vec![
                 Scalar::Text("2026-08-01".into()),
                 Scalar::Text("2026-10-31".into()),
             ])),
         }];
         assert!(validate(&s).is_ok());
+        s.filters[0].preset = Some(DatePreset::FiscalQuarterToDate);
+        assert!(validate(&s).is_ok());
+        s.filters[0].kind = SheetFilterKind::Values;
+        assert!(validate(&s).is_err(), "only date ranges have presets");
+        s.filters[0].kind = SheetFilterKind::DateRange;
         s.filters[0].value = Some(FilterValue::One(Scalar::Number(1.0)));
         assert!(validate(&s).is_err(), "a date range needs two dates");
     }

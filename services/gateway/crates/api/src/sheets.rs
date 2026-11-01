@@ -136,6 +136,7 @@ mod tests {
                 kind: SheetFilterKind::Values,
                 value: None,
                 options: vec![],
+                preset: None,
             }],
             visuals: vec![Visual {
                 id: Uuid::from_u128(1),

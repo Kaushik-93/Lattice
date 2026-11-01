@@ -236,7 +236,13 @@ pub async fn shared(
         sheets::record_view(&state.pool, shared.sheet.id, viewer.map(|v| v.user_id)).await?;
     }
     let data_refreshed_at = data_refreshed_at(&state, &shared.sheet).await?;
+    let fiscal_year_start_month =
+        crate::semantic::load_for_project(&state, shared.sheet.project_id)
+            .await?
+            .model
+            .fiscal_year_start_month;
     Ok(Json(SharedSheetView {
+        fiscal_year_start_month,
         sheet: shared.sheet,
         project_name: shared.project_name,
         shared_by: shared.shared_by,

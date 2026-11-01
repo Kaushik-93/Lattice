@@ -1,6 +1,8 @@
 import type { Dimension, Scalar, TimeBucket, ValueFormat } from "@lattice/shared-types";
 import { DataType, type Field, type Table } from "apache-arrow";
 
+import { fiscalQuarterLabel, fiscalYearLabel } from "./fiscal";
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Arrow cells as numbers: int64 arrives as bigint, decimals as float (the gateway casts them). */
@@ -69,7 +71,12 @@ export function formatDelta(
 }
 
 /** Epoch milliseconds as a label for its time bucket: "2025", "Q3 2025", "Aug 2025". */
-export function formatDate(ms: number, bucket?: TimeBucket | null, timestamp = false): string {
+export function formatDate(
+  ms: number,
+  bucket?: TimeBucket | null,
+  timestamp = false,
+  fiscalStart = 1,
+): string {
   const d = new Date(ms);
   const [y, m, day] = [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
   switch (bucket) {
@@ -81,6 +88,10 @@ export function formatDate(ms: number, bucket?: TimeBucket | null, timestamp = f
       return `${MONTHS[m]} ${y}`;
     case "week":
       return `${MONTHS[m]} ${day}, ${y}`;
+    case "fiscal_quarter":
+      return fiscalQuarterLabel(ms, fiscalStart);
+    case "fiscal_year":
+      return fiscalYearLabel(ms, fiscalStart);
     default:
       return d
         .toISOString()
@@ -90,10 +101,15 @@ export function formatDate(ms: number, bucket?: TimeBucket | null, timestamp = f
 }
 
 /** A dimension value as a label, aware of the time bucket it was grouped by. */
-export function formatDimension(value: unknown, field: Field | undefined, dim?: Dimension): string {
+export function formatDimension(
+  value: unknown,
+  field: Field | undefined,
+  dim?: Dimension,
+  fiscalStart = 1,
+): string {
   if (value === null || value === undefined) return "(blank)";
   if (field && isTemporalField(field) && typeof value === "number") {
-    return formatDate(value, dim?.bucket, DataType.isTimestamp(field.type));
+    return formatDate(value, dim?.bucket, DataType.isTimestamp(field.type), fiscalStart);
   }
   if (dim?.bin !== undefined && dim.bin !== null) {
     const lo = toNumber(value);

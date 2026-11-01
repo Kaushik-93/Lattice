@@ -641,3 +641,88 @@ async fn impact_lists_dependents_and_visuals(pool: PgPool) {
         "{visuals:?}"
     );
 }
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn fiscal_periods_follow_the_fiscal_calendar(pool: PgPool) {
+    use lattice_planner::TimeBucket;
+
+    let d = demo(pool).await;
+    let model = lattice_api::semantic::load(&d.h.state, d.workspace, d.project)
+        .await
+        .unwrap()
+        .model;
+    assert_eq!(model.fiscal_year_start_month, 2);
+    let orders = model.entity("order").unwrap().table.clone().unwrap();
+    // An independent way to get there for a February year: shift a month, truncate, shift back.
+    let expected = |part: &str, measure: &str, name: &str| {
+        format!(
+            "SELECT CAST(date_trunc('{part}', order_date - INTERVAL 1 MONTH) + INTERVAL 1 MONTH AS DATE)
+                        AS order_date_fiscal_{part},
+                    {measure} AS {name}
+             FROM {} GROUP BY ALL",
+            orders.reference
+        )
+    };
+
+    for (bucket, part) in [
+        (TimeBucket::FiscalQuarter, "quarter"),
+        (TimeBucket::FiscalYear, "year"),
+    ] {
+        // Through the semantic model…
+        let mut q = by_region(vec![id_of(&model, "Net revenue")]);
+        q.dimensions[0] = SemDimension {
+            path: Path {
+                entity: "order".into(),
+                column: "order_date".into(),
+            },
+            bucket: Some(bucket),
+            bin: None,
+        };
+        let want = rows(
+            &d.h.state,
+            d.project,
+            &expected(
+                part,
+                "sum(amount) FILTER (WHERE status = 'settled')",
+                "net_revenue",
+            ),
+            vec![],
+        )
+        .await;
+        assert!(want.contains("2026-08-01") || part == "year", "{want}");
+        assert_eq!(compiled_rows(&d, &model, &q).await, want, "{part}");
+
+        // …and on a raw column.
+        let schema = lattice_planner::TableSchema {
+            reference: orders.reference.clone(),
+            columns: orders
+                .columns
+                .iter()
+                .map(|c| lattice_planner::ColumnInfo {
+                    name: c.name.clone(),
+                    data_type: c.data_type.clone(),
+                })
+                .collect(),
+            fiscal_year_start_month: 2,
+        };
+        let raw: lattice_planner::TableQuery = serde_json::from_value(json!({
+            "table_id": orders.table_id,
+            "dimensions": [{ "column": "order_date", "bucket": bucket }],
+            "measures": [{ "agg": "count" }]
+        }))
+        .unwrap();
+        let c = lattice_planner::compile(&raw, &schema).unwrap();
+        let want = rows(
+            &d.h.state,
+            d.project,
+            &expected(part, "count(*)", "count"),
+            vec![],
+        )
+        .await;
+        assert_eq!(
+            rows(&d.h.state, d.project, c.sql.trim_end(), c.params).await,
+            want,
+            "{part}"
+        );
+    }
+}

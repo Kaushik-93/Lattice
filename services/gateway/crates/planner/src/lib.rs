@@ -73,6 +73,10 @@ pub enum TimeBucket {
     Month,
     Week,
     Day,
+    /// Quarters of the fiscal year, from the fiscal calendar rule (docs/adr/0006). Values are
+    /// each period's first day, like the calendar buckets.
+    FiscalQuarter,
+    FiscalYear,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -173,6 +177,8 @@ pub struct TableSchema {
     /// Fully qualified, already-quoted DuckDB reference, e.g. `"project"."s_1"."orders"`.
     pub reference: String,
     pub columns: Vec<ColumnInfo>,
+    /// The month fiscal buckets start from (1 = January), from the project's fiscal calendar.
+    pub fiscal_year_start_month: u32,
 }
 
 #[derive(Debug, Clone)]

@@ -17,6 +17,8 @@ export interface SheetEnv {
   canEdit: boolean;
   /** CSV/PNG downloads (always for members; for link viewers when the link allows it). */
   canExport: boolean;
+  /** The month the fiscal year starts in (1 = January), for labelling fiscal periods. */
+  fiscalStart: number;
   /** The next page of a raw-row table visual. */
   fetchPage: (visualId: string, offset: number) => Promise<QueryResult | null>;
 }

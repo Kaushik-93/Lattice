@@ -72,6 +72,7 @@ pub async fn resolve(
                 data_type: data_type.clone(),
             })
             .collect(),
+        fiscal_year_start_month: 1,
     };
     Ok(Resolved {
         schema,

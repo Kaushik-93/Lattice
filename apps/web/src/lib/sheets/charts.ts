@@ -77,7 +77,7 @@ export interface Shaped {
   series: Series[];
 }
 
-export function shape(spec: VisualSpec, table: Table): Shaped {
+export function shape(spec: VisualSpec, table: Table, fiscalStart = 1): Shaped {
   const fields = table.schema.fields;
   const xs = columnOf(table, 0);
   if (!spec.series) {
@@ -85,7 +85,7 @@ export function shape(spec: VisualSpec, table: Table): Shaped {
     // gateway's default count.
     return {
       keys: xs,
-      labels: xs.map((v) => formatDimension(v, fields[0], spec.x)),
+      labels: xs.map((v) => formatDimension(v, fields[0], spec.x, fiscalStart)),
       series: fields.slice(1).map((field, i) => {
         const m = spec.measures[i];
         return {
@@ -108,7 +108,7 @@ export function shape(spec: VisualSpec, table: Table): Shaped {
       keyIndex.set(x, i);
       keys.push(x);
     }
-    const name = formatDimension(splits[row], fields[1], spec.series);
+    const name = formatDimension(splits[row], fields[1], spec.series, fiscalStart);
     let s = series.get(name);
     if (!s) {
       s = [];
@@ -118,7 +118,7 @@ export function shape(spec: VisualSpec, table: Table): Shaped {
   });
   return {
     keys,
-    labels: keys.map((v) => formatDimension(v, fields[0], spec.x)),
+    labels: keys.map((v) => formatDimension(v, fields[0], spec.x, fiscalStart)),
     series: [...series].map(([name, vs]) => ({
       name,
       values: Array.from({ length: keys.length }, (_, i) => vs[i] ?? null),
@@ -166,8 +166,13 @@ export function pickRows(shaped: Shaped, indices: ArrayLike<number>): Shaped {
 }
 
 /** Line, area, column and bar charts. */
-export function cartesianOption(spec: VisualSpec, table: Table, selected: Scalar[]): EChartsOption {
-  return shapedOption(spec, shape(spec, table), selected, table.schema.fields[0]);
+export function cartesianOption(
+  spec: VisualSpec,
+  table: Table,
+  selected: Scalar[],
+  fiscalStart = 1,
+): EChartsOption {
+  return shapedOption(spec, shape(spec, table, fiscalStart), selected, table.schema.fields[0]);
 }
 
 export function shapedOption(
@@ -265,8 +270,13 @@ export function foldSlices(shaped: Shaped): Shaped {
   };
 }
 
-export function pieOption(spec: VisualSpec, table: Table, selected: Scalar[]): EChartsOption {
-  const { keys, labels, series } = foldSlices(shape(spec, table));
+export function pieOption(
+  spec: VisualSpec,
+  table: Table,
+  selected: Scalar[],
+  fiscalStart = 1,
+): EChartsOption {
+  const { keys, labels, series } = foldSlices(shape(spec, table, fiscalStart));
   const values = series[0]?.values ?? [];
   const format = spec.options.format ?? undefined;
   const dim = selected.length > 0;
@@ -300,13 +310,15 @@ export function pieOption(spec: VisualSpec, table: Table, selected: Scalar[]): E
   };
 }
 
-export function heatmapOption(spec: VisualSpec, table: Table): EChartsOption {
+export function heatmapOption(spec: VisualSpec, table: Table, fiscalStart = 1): EChartsOption {
   const fields = table.schema.fields;
   const xs = columnOf(table, 0);
   const ys = columnOf(table, 1);
   const values = numbersOf(table, 2);
-  const xLabels = [...new Set(xs.map((v) => formatDimension(v, fields[0], spec.x)))];
-  const yLabels = [...new Set(ys.map((v) => formatDimension(v, fields[1], spec.series)))];
+  const xLabels = [...new Set(xs.map((v) => formatDimension(v, fields[0], spec.x, fiscalStart)))];
+  const yLabels = [
+    ...new Set(ys.map((v) => formatDimension(v, fields[1], spec.series, fiscalStart))),
+  ];
   const finite = values.filter((v): v is number => v !== null);
   const format = spec.options.format ?? undefined;
   return {
@@ -354,8 +366,8 @@ export function heatmapOption(spec: VisualSpec, table: Table): EChartsOption {
       {
         type: "heatmap",
         data: xs.map((x, i) => [
-          xLabels.indexOf(formatDimension(x, fields[0], spec.x)),
-          yLabels.indexOf(formatDimension(ys[i], fields[1], spec.series)),
+          xLabels.indexOf(formatDimension(x, fields[0], spec.x, fiscalStart)),
+          yLabels.indexOf(formatDimension(ys[i], fields[1], spec.series, fiscalStart)),
           values[i],
         ]),
         itemStyle: { borderColor: "#ffffff", borderWidth: 2, borderRadius: 4 },

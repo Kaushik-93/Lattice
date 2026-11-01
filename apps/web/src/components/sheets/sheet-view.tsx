@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProjectModel } from "@/lib/knowledge/api";
 import { dataClient, type QueryResult } from "@/lib/data/client";
 import { ApiError, api } from "@/lib/gateway";
 import { useProject, useProjectTables } from "@/lib/queries";
@@ -37,7 +38,7 @@ import { createSheetStore, type SheetStore } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
 
 import { SheetEnvProvider, useSheetEnv, useSheetState, type SheetEnv } from "./sheet-env";
-import { SheetFilters } from "./sheet-filters";
+import { SheetFilters, usePresetDefaults } from "./sheet-filters";
 import { SheetGrid } from "./sheet-grid";
 import { EditorPanel, addVisual } from "./visual-editor";
 
@@ -191,9 +192,12 @@ function SheetEditor({
     },
     [store, projectId],
   );
+  const model = useProjectModel(projectId);
+  const fiscalStart = model.data?.fiscal_year_start_month ?? 1;
+  usePresetDefaults(store, model.data?.fiscal_year_start_month);
   const env = useMemo<SheetEnv>(
-    () => ({ store, results, target, canEdit, canExport: true, fetchPage }),
-    [store, results, target, canEdit, fetchPage],
+    () => ({ store, results, target, canEdit, canExport: true, fetchPage, fiscalStart }),
+    [store, results, target, canEdit, fetchPage, fiscalStart],
   );
 
   return (

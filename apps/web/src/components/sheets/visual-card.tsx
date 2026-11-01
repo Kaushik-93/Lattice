@@ -58,16 +58,21 @@ const ECHARTS_KINDS = new Set([
 ]);
 
 /** "2025" / "Q3 2025" / "Aug 2025" / "EMEA" for a value drilled into at `level`. */
-function drillLabel(value: Scalar, level: Dimension | undefined): string {
+function drillLabel(value: Scalar, level: Dimension | undefined, fiscalStart: number): string {
   if (typeof value === "string" && level?.bucket) {
-    return formatDate(Date.parse(`${value.slice(0, 10)}T00:00:00Z`), level.bucket);
+    return formatDate(
+      Date.parse(`${value.slice(0, 10)}T00:00:00Z`),
+      level.bucket,
+      false,
+      fiscalStart,
+    );
   }
   return String(value);
 }
 
 /** One visual on a sheet: its card, header, drill path, menu and body. */
 export const VisualCard = memo(function VisualCard({ visual }: { visual: Visual }) {
-  const { store, results, canEdit, canExport, fetchPage } = useSheetEnv();
+  const { store, results, canEdit, canExport, fetchPage, fiscalStart } = useSheetEnv();
   const spec = visual.spec;
   const result = useVisualResult(results, visual.id);
   const drill = useSheetState((s) => s.drill[visual.id] ?? NO_DRILL);
@@ -258,7 +263,7 @@ export const VisualCard = memo(function VisualCard({ visual }: { visual: Visual 
                     disabled={i === depth - 1}
                     onClick={() => store.getState().drillTo(visual.id, i + 1)}
                   >
-                    {drillLabel(value, levels[i])}
+                    {drillLabel(value, levels[i], fiscalStart)}
                   </button>
                 </span>
               ))}

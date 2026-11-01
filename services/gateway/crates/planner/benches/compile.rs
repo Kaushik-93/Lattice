@@ -22,6 +22,7 @@ fn bench(c: &mut Criterion) {
             data_type: (*t).into(),
         })
         .collect(),
+        fiscal_year_start_month: 1,
     };
     let query: TableQuery = serde_json::from_str(
         r#"{"table_id":"01930000-0000-7000-8000-000000000000",

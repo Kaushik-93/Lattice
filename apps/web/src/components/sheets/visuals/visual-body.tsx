@@ -27,6 +27,7 @@ import {
 } from "@/lib/sheets/values";
 import { cn } from "@/lib/utils";
 
+import { useSheetEnv } from "../sheet-env";
 import { EChart } from "./echart";
 
 export interface Interactions {
@@ -56,7 +57,10 @@ export function KpiVisual({ visual, result }: { visual: Visual; result: VisualRe
             delta.tone === "flat" && "text-muted-foreground",
           )}
         >
-          {delta.text === "Flat" ? "Flat" : delta.text} vs previous period
+          {delta.text === "Flat" ? "Flat" : delta.text} vs{" "}
+          {visual.spec.options.compare_to === "previous_year"
+            ? "same period last year"
+            : "previous period"}
         </span>
       ) : (
         <span className="text-xs text-muted-foreground">
@@ -77,7 +81,11 @@ export function BarList({
   onSelect,
   onDrill,
 }: { visual: Visual; table: Table } & Interactions) {
-  const { keys, labels, series } = useMemo(() => shape(visual.spec, table), [visual.spec, table]);
+  const { fiscalStart } = useSheetEnv();
+  const { keys, labels, series } = useMemo(
+    () => shape(visual.spec, table, fiscalStart),
+    [visual.spec, table, fiscalStart],
+  );
   const values = series[0]?.values ?? [];
   const max = Math.max(1e-9, ...values.map((v) => v ?? 0));
   const field = table.schema.fields[0];
@@ -131,6 +139,7 @@ export const ChartVisual = memo(function ChartVisual({
   onSelect,
   onDrill,
 }: { visual: Visual; table: Table } & Interactions) {
+  const { fiscalStart } = useSheetEnv();
   const spec = visual.spec;
   const line = (spec.kind === "line" || spec.kind === "area") && !spec.series;
   const [kept, setKept] = useState<{ table: Table; indices: Uint32Array } | null>(null);
@@ -157,21 +166,21 @@ export const ChartVisual = memo(function ChartVisual({
   }, [line, table, zoom]);
 
   const field = table.schema.fields[0];
-  const shaped = useMemo(() => shape(spec, table), [spec, table]);
+  const shaped = useMemo(() => shape(spec, table, fiscalStart), [spec, table, fiscalStart]);
   const shown = kept?.table === table ? pickRows(shaped, kept.indices) : shaped;
   const option = useMemo<EChartsOption>(() => {
     switch (spec.kind) {
       case "pie":
       case "donut":
-        return pieOption(spec, table, selected);
+        return pieOption(spec, table, selected, fiscalStart);
       case "heatmap":
-        return heatmapOption(spec, table);
+        return heatmapOption(spec, table, fiscalStart);
       case "histogram":
         return histogramOption(spec, table);
       default:
         return shapedOption(spec, shown, selected, field);
     }
-  }, [spec, table, selected, shown, field]);
+  }, [spec, table, selected, shown, field, fiscalStart]);
 
   const keys =
     spec.kind === "heatmap"
@@ -181,9 +190,9 @@ export const ChartVisual = memo(function ChartVisual({
         : shown.keys;
   const keyAt = (dataIndex: number, value: unknown): unknown => {
     if (spec.kind === "heatmap" && Array.isArray(value)) {
-      const xLabels = [...new Set(keys.map((k) => formatDimension(k, field, spec.x)))];
+      const xLabels = [...new Set(keys.map((k) => formatDimension(k, field, spec.x, fiscalStart)))];
       const label = xLabels[value[0] as number];
-      return keys.find((k) => formatDimension(k, field, spec.x) === label);
+      return keys.find((k) => formatDimension(k, field, spec.x, fiscalStart) === label);
     }
     return keys[dataIndex];
   };
@@ -200,13 +209,16 @@ export const ChartVisual = memo(function ChartVisual({
 
 /** Rows × columns of a two-dimension result, summed into a matrix with totals. */
 export function PivotVisual({ visual, table }: { visual: Visual; table: Table }) {
+  const { fiscalStart } = useSheetEnv();
   const fields = table.schema.fields;
   const rowsCol = columnOf(table, 0);
   const colsCol = columnOf(table, 1);
   const values = columnOf(table, 2).map(toNumber);
-  const rowLabels = [...new Set(rowsCol.map((v) => formatDimension(v, fields[0], visual.spec.x)))];
+  const rowLabels = [
+    ...new Set(rowsCol.map((v) => formatDimension(v, fields[0], visual.spec.x, fiscalStart))),
+  ];
   const colLabels = [
-    ...new Set(colsCol.map((v) => formatDimension(v, fields[1], visual.spec.series))),
+    ...new Set(colsCol.map((v) => formatDimension(v, fields[1], visual.spec.series, fiscalStart))),
   ];
   const cells = new Map<string, number>();
   rowsCol.forEach((r, i) => {

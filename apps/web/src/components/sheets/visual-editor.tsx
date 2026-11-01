@@ -2,6 +2,8 @@
 
 import type {
   Aggregation,
+  CompareTo,
+  DatePreset,
   Dimension,
   Measure,
   ModelMetric,
@@ -18,6 +20,7 @@ import { useId, useState, type ReactNode } from "react";
 
 import { dataClient } from "@/lib/data/client";
 import { metricsFor, useProjectModel } from "@/lib/knowledge/api";
+import { PRESET_LABEL, presetRange } from "@/lib/sheets/fiscal";
 import { useProjectTables, type CatalogTable } from "@/lib/queries";
 import { newId, type SheetDoc } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
@@ -49,7 +52,25 @@ const AGGS: [Aggregation, string][] = [
   ["min", "Min"],
   ["max", "Max"],
 ];
-const BUCKETS: TimeBucket[] = ["day", "week", "month", "quarter", "year"];
+const BUCKETS: TimeBucket[] = [
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+  "fiscal_quarter",
+  "fiscal_year",
+];
+const BUCKET_LABEL: Record<TimeBucket, string> = {
+  day: "day",
+  week: "week",
+  month: "month",
+  quarter: "quarter",
+  year: "year",
+  fiscal_quarter: "fiscal quarter",
+  fiscal_year: "fiscal year",
+};
+const FIXED = "fixed";
 const SPLIT_KINDS = new Set<VisualKind>([
   "line",
   "area",
@@ -278,7 +299,7 @@ function VisualFields({
               <option value="">Exact</option>
               {BUCKETS.map((b) => (
                 <option key={b} value={b}>
-                  {b[0]!.toUpperCase() + b.slice(1)}
+                  {BUCKET_LABEL[b][0]!.toUpperCase() + BUCKET_LABEL[b].slice(1)}
                 </option>
               ))}
             </select>
@@ -514,24 +535,46 @@ function VisualFields({
       )}
 
       {spec.kind === "kpi" && (
-        <Field label="Compare with the previous period of">
-          {(id) => (
-            <select
-              id={id}
-              className={control}
-              value={spec.options.compare ?? ""}
-              onChange={(e) =>
-                update("Change comparison", (s) => ({
-                  ...s,
-                  options: { ...s.options, compare: e.target.value || undefined },
-                }))
-              }
-            >
-              <option value="">No comparison</option>
-              {columnOptions(isTemporalType)}
-            </select>
+        <>
+          <Field label="Compare over the sheet's date range on">
+            {(id) => (
+              <select
+                id={id}
+                className={control}
+                value={spec.options.compare ?? ""}
+                onChange={(e) =>
+                  update("Change comparison", (s) => ({
+                    ...s,
+                    options: { ...s.options, compare: e.target.value || undefined },
+                  }))
+                }
+              >
+                <option value="">No comparison</option>
+                {columnOptions(isTemporalType)}
+              </select>
+            )}
+          </Field>
+          {spec.options.compare && (
+            <Field label="Compared with">
+              {(id) => (
+                <select
+                  id={id}
+                  className={control}
+                  value={spec.options.compare_to ?? "previous_period"}
+                  onChange={(e) =>
+                    update("Change comparison", (s) => ({
+                      ...s,
+                      options: { ...s.options, compare_to: e.target.value as CompareTo },
+                    }))
+                  }
+                >
+                  <option value="previous_period">The previous period</option>
+                  <option value="previous_year">The same period last year</option>
+                </select>
+              )}
+            </Field>
           )}
-        </Field>
+        </>
       )}
 
       {["bar", "column", "area"].includes(spec.kind) && spec.series && (
@@ -882,7 +925,7 @@ async function distinctValues(
 }
 
 function SheetFields({ tables, projectId }: { tables: CatalogTable[]; projectId: string }) {
-  const { store } = useSheetEnv();
+  const { store, fiscalStart } = useSheetEnv();
   const doc = useSheetState((s) => s.doc);
   const [column, setColumn] = useState("");
   const [busy, setBusy] = useState(false);
@@ -959,9 +1002,40 @@ function SheetFields({ tables, projectId }: { tables: CatalogTable[]; projectId:
                 )
               }
             />
-            <span className="text-xs text-muted-foreground">
-              {f.kind === "date_range" ? "date range" : `${f.options?.length ?? 0} values`}
-            </span>
+            {f.kind === "date_range" ? (
+              <select
+                aria-label={`Default range of the ${f.column} filter`}
+                className="h-7 rounded-md border border-input bg-card px-1.5 text-xs"
+                value={f.preset ?? FIXED}
+                onChange={(e) => {
+                  const preset =
+                    e.target.value === FIXED ? undefined : (e.target.value as DatePreset);
+                  edit("Change default range", (d) => ({
+                    ...d,
+                    filters: d.filters.map((x) =>
+                      x.id === f.id
+                        ? {
+                            ...x,
+                            preset,
+                            value: preset ? presetRange(preset, fiscalStart) : x.value,
+                          }
+                        : x,
+                    ),
+                  }));
+                }}
+              >
+                <option value={FIXED}>Fixed dates</option>
+                {(Object.keys(PRESET_LABEL) as DatePreset[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRESET_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {`${f.options?.length ?? 0} values`}
+              </span>
+            )}
             <button
               type="button"
               aria-label={`Remove the ${f.column} filter`}

@@ -81,6 +81,7 @@ fn setup(rt: &Runtime) -> (Arc<ProjectDb>, TableSchema) {
                     data_type: c.data_type.clone(),
                 })
                 .collect(),
+            fiscal_year_start_month: 1,
         };
         // Leak the engine: the database must outlive the runtime's benchmark loop.
         let engine = Box::leak(Box::new(engine));

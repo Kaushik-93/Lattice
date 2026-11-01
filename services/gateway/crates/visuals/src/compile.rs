@@ -5,7 +5,7 @@ use lattice_planner::{
 };
 use uuid::Uuid;
 
-use crate::{SelectionScope, SheetContext, SortBy, VisualKind, VisualSpec};
+use crate::{CompareTo, SelectionScope, SheetContext, SortBy, VisualKind, VisualSpec};
 
 /// Which of a visual's queries a result answers. Results are framed with the visual id plus
 /// [`QueryPart::suffix`].
@@ -227,7 +227,7 @@ pub fn compile(
     let mut out = Vec::with_capacity(2);
     if spec.kind == VisualKind::Kpi
         && let Some(column) = &spec.options.compare
-        && let Some(previous) = previous_period(&query.filters, column)
+        && let Some(previous) = earlier(&query.filters, column, spec.options.compare_to)
     {
         let mut compare = query.clone();
         compare.filters = previous;
@@ -278,7 +278,14 @@ fn drill_levels(x: &Dimension, drill: &[Dimension]) -> Vec<Dimension> {
     }
     let finer: &[TimeBucket] = match x.bucket {
         Some(TimeBucket::Year) => &[TimeBucket::Quarter, TimeBucket::Month, TimeBucket::Day],
-        Some(TimeBucket::Quarter) => &[TimeBucket::Month, TimeBucket::Day],
+        Some(TimeBucket::FiscalYear) => &[
+            TimeBucket::FiscalQuarter,
+            TimeBucket::Month,
+            TimeBucket::Day,
+        ],
+        Some(TimeBucket::Quarter) | Some(TimeBucket::FiscalQuarter) => {
+            &[TimeBucket::Month, TimeBucket::Day]
+        }
         Some(TimeBucket::Month) | Some(TimeBucket::Week) => &[TimeBucket::Day],
         Some(TimeBucket::Day) | None => &[],
     };
@@ -303,8 +310,10 @@ fn drill_filters(level: &Dimension, value: &Scalar) -> Result<Vec<Filter>, Visua
         };
         let start = parse_date(text)?;
         let end = match bucket {
-            TimeBucket::Year => start.checked_add_months(Months::new(12)),
-            TimeBucket::Quarter => start.checked_add_months(Months::new(3)),
+            TimeBucket::Year | TimeBucket::FiscalYear => start.checked_add_months(Months::new(12)),
+            TimeBucket::Quarter | TimeBucket::FiscalQuarter => {
+                start.checked_add_months(Months::new(3))
+            }
             TimeBucket::Month => start.checked_add_months(Months::new(1)),
             TimeBucket::Week => start.checked_add_days(Days::new(7)),
             TimeBucket::Day => start.checked_add_days(Days::new(1)),
@@ -335,10 +344,14 @@ fn parse_date(text: &str) -> Result<NaiveDate, VisualError> {
         .ok_or_else(|| VisualError::InvalidDrill(text.to_owned()))
 }
 
-/// The filters with the `between` range on `column` moved to the period just before it, or
-/// `None` when there is no such range. Whole calendar months shift by months (Aug–Oct → May–Jul);
-/// other ranges shift by their length in days.
-fn previous_period(filters: &[Filter], column: &str) -> Option<Vec<Filter>> {
+/// The filters with the `between` range on `column` moved to the period it's compared with, or
+/// `None` when there is no such range.
+///
+/// The previous period: a range starting on the 1st shifts by the months it touches, so whole
+/// months compare with the months before (Aug–Oct → May–Jul) and a to-date range with the same
+/// stretch of the previous period (1 Aug–15 Oct → 1 May–15 Jul); other ranges shift by their
+/// length in days. The same period last year shifts both ends by a year.
+fn earlier(filters: &[Filter], column: &str, to: CompareTo) -> Option<Vec<Filter>> {
     let i = filters
         .iter()
         .position(|f| f.column == column && f.op == FilterOp::Between)?;
@@ -349,15 +362,30 @@ fn previous_period(filters: &[Filter], column: &str) -> Option<Vec<Filter>> {
         return None;
     };
     let (start, end) = (parse_date(a).ok()?, parse_date(b).ok()?);
-    let after = end.checked_add_days(Days::new(1))?;
-    let (prev_start, prev_end) = if start.day() == 1 && after.day() == 1 {
-        let months =
-            (after.year() - start.year()) * 12 + after.month() as i32 - start.month() as i32;
-        let months = Months::new(u32::try_from(months).ok().filter(|m| *m > 0)?);
-        (start.checked_sub_months(months)?, start.pred_opt()?)
-    } else {
-        let days = Days::new(u64::try_from((end - start).num_days() + 1).ok()?);
-        (start.checked_sub_days(days)?, start.pred_opt()?)
+    if end < start {
+        return None;
+    }
+    let (prev_start, prev_end) = match to {
+        CompareTo::PreviousYear => (
+            start.checked_sub_months(Months::new(12))?,
+            end.checked_sub_months(Months::new(12))?,
+        ),
+        CompareTo::PreviousPeriod if start.day() == 1 => {
+            let months =
+                (end.year() - start.year()) * 12 + end.month() as i32 - start.month() as i32 + 1;
+            let months = Months::new(u32::try_from(months).ok()?);
+            let whole = end.checked_add_days(Days::new(1))?.day() == 1;
+            let prev_end = if whole {
+                start.pred_opt()?
+            } else {
+                end.checked_sub_months(months)?
+            };
+            (start.checked_sub_months(months)?, prev_end)
+        }
+        CompareTo::PreviousPeriod => {
+            let days = Days::new(u64::try_from((end - start).num_days() + 1).ok()?);
+            (start.checked_sub_days(days)?, start.pred_opt()?)
+        }
     };
     let mut shifted = filters.to_vec();
     shifted[i].value = Some(FilterValue::Many(vec![

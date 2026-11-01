@@ -104,6 +104,16 @@ much larger scale). The extension stays installed.
 - **Impact before approval.** The reviewer sees the definitions that use the note (through
   `[[links]]` in formulas and conditions, transitively) and the visuals charting any of them;
   visuals in projects the reviewer can't open are counted, not named.
+- **Fiscal periods come from the fiscal calendar rule.** Fiscal quarter and fiscal year are time
+  buckets like the calendar ones (values are each period's first day; grouped by an integer
+  period index so the two-level aggregation stays fast) and work on raw columns too. A fiscal
+  year is named after the calendar year it ends in: with a February start, FY2027 runs
+  Feb 2026–Jan 2027.
+- **Comparisons** are the previous period or the same period last year. A range starting on the
+  1st compares month for month, so a to-date range meets the same stretch of the period before
+  (1 Aug–15 Oct against 1 May–15 Jul). Year, quarter and month to date are presets of a sheet's
+  date filter, worked out in the browser from today and the fiscal calendar whenever the sheet
+  opens; the gateway only ever sees plain date ranges, which share links already accept.
 - **The result cache keys on logic.** Every definition used (`note_id@version`) and every table's
   data version are part of the key, so approving a new version produces new results.
 

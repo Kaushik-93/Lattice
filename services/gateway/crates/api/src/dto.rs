@@ -257,6 +257,8 @@ pub struct WorkspaceMembersResponse {
 pub struct SharedSheetView {
     pub sheet: lattice_sheets::Sheet,
     pub project_name: String,
+    /// For labelling fiscal periods (1 = January).
+    pub fiscal_year_start_month: u32,
     pub shared_by: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
     pub allow_export: bool,

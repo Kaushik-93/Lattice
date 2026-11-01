@@ -1,8 +1,8 @@
 "use client";
 
-import type { FilterValue, Scalar, SheetFilterDef } from "@lattice/shared-types";
+import type { DatePreset, FilterValue, Scalar, SheetFilterDef } from "@lattice/shared-types";
 import { Calendar, ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import {
@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { currentValue } from "@/lib/sheets/context";
+import { PRESET_LABEL, presetRange } from "@/lib/sheets/fiscal";
+import type { SheetStore } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
 
-import { useSheetState } from "./sheet-env";
+import { useSheetEnv, useSheetState } from "./sheet-env";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const trigger =
@@ -69,7 +71,9 @@ function DateRangeFilter({ def }: { def: SheetFilterDef }) {
   const fromId = useId();
   const toId = useId();
   const [from, to] = value.map(String);
-  const isDefault = JSON.stringify(value) === JSON.stringify(asList(def.value ?? null));
+  const fiscalStart = useSheetEnv().fiscalStart;
+  const defaultValue = def.preset ? presetRange(def.preset, fiscalStart) : (def.value ?? null);
+  const isDefault = JSON.stringify(value) === JSON.stringify(asList(defaultValue));
   const label = !from || !to ? "All dates" : isDefault ? def.label : rangeLabel(from, to);
   const today = new Date().toISOString().slice(0, 10);
   const set = (v: FilterValue | null) => {
@@ -77,10 +81,12 @@ function DateRangeFilter({ def }: { def: SheetFilterDef }) {
     setOpen(false);
   };
   const presets: [string, FilterValue | null][] = [
-    ...(def.value ? [[def.label, def.value] as [string, FilterValue]] : []),
+    ...(defaultValue && !def.preset ? [[def.label, defaultValue] as [string, FilterValue]] : []),
+    ...(Object.keys(PRESET_LABEL) as DatePreset[]).map(
+      (p) => [PRESET_LABEL[p], presetRange(p, fiscalStart)] as [string, FilterValue],
+    ),
     ["Last 30 days", [isoDaysAgo(29), today]],
     ["Last 90 days", [isoDaysAgo(89), today]],
-    [`This year`, [`${today.slice(0, 4)}-01-01`, today]],
     ["All dates", null],
   ];
   return (
@@ -233,4 +239,18 @@ function SegmentedFilter({ def }: { def: SheetFilterDef }) {
       </div>
     </div>
   );
+}
+
+/** Date filters whose default is "to date" start from today's range when the sheet opens, once
+ * the fiscal calendar is known. */
+export function usePresetDefaults(store: SheetStore, fiscalStart: number | undefined) {
+  useEffect(() => {
+    if (fiscalStart === undefined) return;
+    const s = store.getState();
+    for (const def of s.doc.filters) {
+      if (def.preset && !(def.id in s.filterValues)) {
+        s.setFilterValue(def.id, presetRange(def.preset, fiscalStart));
+      }
+    }
+  }, [store, fiscalStart]);
 }

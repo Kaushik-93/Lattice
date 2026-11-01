@@ -742,6 +742,7 @@ pub fn compile(model: &Model, q: &SemanticQuery) -> Result<Compiled> {
             class,
             if d.bin.is_some() { None } else { d.bucket },
             &alias,
+            model.fiscal_year_start_month,
         ));
         columns.push(OutputColumn {
             name: alias,

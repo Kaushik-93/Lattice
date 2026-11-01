@@ -24,6 +24,7 @@ fn orders() -> TableSchema {
                 data_type: (*t).into(),
             })
             .collect(),
+        fiscal_year_start_month: 1,
     }
 }
 

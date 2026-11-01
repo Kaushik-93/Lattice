@@ -31,6 +31,7 @@ fn orders() -> TableSchema {
                 data_type: (*t).into(),
             })
             .collect(),
+        fiscal_year_start_month: 1,
     }
 }
 
@@ -278,4 +279,69 @@ fn missing_fields_are_reported_per_kind() {
             "{kind}: {err}"
         );
     }
+}
+
+#[test]
+fn kpi_compares_to_date_ranges_and_the_same_period_last_year() {
+    let kpi = |to: &str| {
+        json!({
+            "kind": "kpi",
+            "measures": [{ "column": "amount", "agg": "sum" }],
+            "options": { "compare": "order_date", "compare_to": to }
+        })
+    };
+    let compared = |to: &str, from: &str, until: &str| {
+        let ctx = json!({ "filters": [{ "column": "order_date", "op": "between", "value": [from, until] }] });
+        let out = run(kpi(to), json!([]), ctx).unwrap();
+        serde_json::to_value(&out[1].1.filters[0].value).unwrap()
+    };
+    // Fiscal quarter to date: the same stretch of the quarter before.
+    assert_eq!(
+        compared("previous_period", "2026-08-01", "2026-10-15"),
+        json!(["2026-05-01", "2026-07-15"])
+    );
+    // Month to date on the 31st: the previous month, clamped to its last day.
+    assert_eq!(
+        compared("previous_period", "2026-10-01", "2026-10-31"),
+        json!(["2026-09-01", "2026-09-30"])
+    );
+    assert_eq!(
+        compared("previous_year", "2026-02-01", "2026-10-15"),
+        json!(["2025-02-01", "2025-10-15"])
+    );
+    assert_eq!(
+        compared("previous_year", "2028-02-01", "2028-02-29"),
+        json!(["2027-02-01", "2027-02-28"])
+    );
+}
+
+#[test]
+fn fiscal_periods_drill_into_months() {
+    let spec_json = json!({
+        "kind": "column",
+        "x": { "column": "order_date", "bucket": "fiscal_year" },
+        "measures": [{ "column": "amount", "agg": "sum" }]
+    });
+    // Fiscal year → fiscal quarter → month → day.
+    let out = run(spec_json.clone(), json!(["2026-02-01"]), json!({})).unwrap();
+    let q = &out[0].1;
+    assert_eq!(
+        serde_json::to_value(&q.dimensions[0]).unwrap(),
+        json!({ "column": "order_date", "bucket": "fiscal_quarter" })
+    );
+    assert_eq!(
+        serde_json::to_value(&q.filters).unwrap(),
+        json!([
+            { "column": "order_date", "op": "gte", "value": "2026-02-01" },
+            { "column": "order_date", "op": "lt", "value": "2027-02-01" }
+        ])
+    );
+    let out = run(spec_json, json!(["2026-02-01", "2026-08-01"]), json!({})).unwrap();
+    assert_eq!(
+        serde_json::to_value(&out[0].1.filters[2..]).unwrap(),
+        json!([
+            { "column": "order_date", "op": "gte", "value": "2026-08-01" },
+            { "column": "order_date", "op": "lt", "value": "2026-11-01" }
+        ])
+    );
 }

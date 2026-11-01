@@ -136,8 +136,16 @@ impl Ctx<'_> {
                     class,
                     None,
                     &alias,
+                    1,
                 ),
-                None => dimension_parts(i, &c, class, d.bucket, &alias),
+                None => dimension_parts(
+                    i,
+                    &c,
+                    class,
+                    d.bucket,
+                    &alias,
+                    self.table.fiscal_year_start_month,
+                ),
             });
             columns.push(OutputColumn {
                 name: alias,
@@ -431,12 +439,16 @@ impl DimParts {
     }
 }
 
+/// How to group by a dimension: one expression, or (for calendar buckets) integer parts grouped
+/// in an inner query and rebuilt into dates outside, which DuckDB groups much faster.
+/// `fiscal_start` is the month (1–12) fiscal buckets begin in.
 pub fn dimension_parts(
     i: usize,
     c: &str,
     class: TypeClass,
     bucket: Option<TimeBucket>,
     alias: &str,
+    fiscal_start: u32,
 ) -> DimParts {
     let key = format!("k{i}");
     let (y, q, m) = (format!("k{i}_y"), format!("k{i}_q"), format!("k{i}_m"));
@@ -484,6 +496,31 @@ pub fn dimension_parts(
             outer: Some(format!("make_date({}, {}, 1) AS {a}", ident(&y), ident(&m))),
             key,
         },
+        Some(b @ (TimeBucket::FiscalQuarter | TimeBucket::FiscalYear)) => {
+            // Months since year 0, shifted so fiscal periods start on a multiple of their length:
+            // the period index is an integer division, and its first month comes back from it.
+            let months = if b == TimeBucket::FiscalQuarter {
+                3
+            } else {
+                12
+            };
+            let shift = fiscal_start.clamp(1, 12) - 1;
+            let index = format!("((year({c}) * 12 + month({c}) - 1 - {shift}) // {months})");
+            let start = |k: &str| {
+                let first = format!("({k} * {months} + {shift})");
+                format!(
+                    "make_date(CAST({first} // 12 AS INTEGER), CAST({first} % 12 + 1 AS INTEGER), 1)"
+                )
+            };
+            let p = format!("k{i}_p");
+            DimParts {
+                expr: start(&index),
+                alias: alias.to_owned(),
+                inner: vec![format!("{index} AS {}", ident(&p))],
+                outer: Some(format!("{} AS {a}", start(&ident(&p)))),
+                key,
+            }
+        }
     }
 }
 
@@ -494,6 +531,8 @@ pub fn bucket_name(b: TimeBucket) -> &'static str {
         TimeBucket::Month => "month",
         TimeBucket::Week => "week",
         TimeBucket::Day => "day",
+        TimeBucket::FiscalQuarter => "fiscal_quarter",
+        TimeBucket::FiscalYear => "fiscal_year",
     }
 }
 

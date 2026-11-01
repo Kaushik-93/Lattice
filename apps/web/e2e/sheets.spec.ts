@@ -195,3 +195,49 @@ test("visuals chart governed metrics; raw columns are marked", async ({ page }) 
     await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
   }
 });
+
+test("fiscal periods, comparisons and ranges to date", async ({ page }) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  try {
+    // Bars by fiscal year: the calendar starts in February, and years are named after the
+    // year they end in (FY2027 runs Feb 2026–Jan 2027).
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    await page.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await page.getByLabel("Title").fill("By fiscal year");
+    await page.getByRole("button", { name: "Bar", exact: true }).click();
+    await page.getByLabel("Group by", { exact: true }).selectOption("order_date");
+    await page.getByLabel("Group by grain").selectOption("fiscal_year");
+    const bars = page.getByRole("region", { name: "By fiscal year" });
+    for (const year of ["FY2025", "FY2026", "FY2027"]) {
+      await expect(bars.getByText(year, { exact: true })).toBeVisible({ timeout: 15_000 });
+    }
+
+    // A KPI against the same period last year, over fiscal year to date.
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    await page.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await page.getByLabel("Title").fill("Revenue YoY");
+    await page.getByRole("button", { name: "KPI", exact: true }).click();
+    await page.getByLabel("Compare over the sheet's date range on").selectOption("order_date");
+    await page.getByLabel("Compared with").selectOption("previous_year");
+
+    // A date filter defaulting to fiscal year to date.
+    await page.getByRole("button", { name: "Sheet settings" }).click();
+    await page.getByLabel("Filter on column").selectOption("order_date");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page
+      .getByLabel("Default range of the order_date filter")
+      .selectOption("fiscal_year_to_date");
+    const kpi = page.getByRole("region", { name: "Revenue YoY" });
+    await expect(kpi).toContainText("vs same period last year", { timeout: 15_000 });
+    await page.getByRole("button", { name: /order_date range/ }).click();
+    await expect(page.getByRole("button", { name: "Fiscal quarter to date" })).toBeVisible();
+    await page.keyboard.press("Escape");
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+  }
+});

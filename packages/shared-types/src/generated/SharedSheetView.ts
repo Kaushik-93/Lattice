@@ -4,7 +4,11 @@ import type { Sheet } from "./Sheet";
 /**
  * What a share link opens (design screen 08).
  */
-export type SharedSheetView = { sheet: Sheet, project_name: string, shared_by: string | null, expires_at: string | null, allow_export: boolean, 
+export type SharedSheetView = { sheet: Sheet, project_name: string, 
+/**
+ * For labelling fiscal periods (1 = January).
+ */
+fiscal_year_start_month: number, shared_by: string | null, expires_at: string | null, allow_export: boolean, 
 /**
  * When the newest of the sheet's sources last synced.
  */

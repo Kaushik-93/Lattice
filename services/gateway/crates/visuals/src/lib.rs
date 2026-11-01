@@ -106,13 +106,36 @@ pub struct VisualOptions {
     /// Stack series (bar, column, area) instead of grouping them.
     #[serde(default)]
     pub stacked: bool,
-    /// KPI: compare with the previous period of the sheet's date range on this column.
+    /// KPI: compare with an earlier period of the sheet's date range on this column.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub compare: Option<String>,
+    /// Which earlier period (docs/adr/0006 decision 5).
+    #[serde(default, skip_serializing_if = "CompareTo::is_previous_period")]
+    #[ts(as = "Option<CompareTo>", optional)]
+    pub compare_to: CompareTo,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub format: Option<ValueFormat>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum CompareTo {
+    /// The period just before, of the same length (for a to-date range, the same stretch of the
+    /// previous period).
+    #[default]
+    PreviousPeriod,
+    /// The same dates a year earlier.
+    PreviousYear,
+}
+
+impl CompareTo {
+    #[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if passes a reference
+    fn is_previous_period(&self) -> bool {
+        *self == CompareTo::PreviousPeriod
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

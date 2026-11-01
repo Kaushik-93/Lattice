@@ -70,6 +70,7 @@ async fn loads_a_csv_extract_and_answers_compiled_queries() {
                 data_type: c.data_type.clone(),
             })
             .collect(),
+        fiscal_year_start_month: 1,
     };
     let query: TableQuery = serde_json::from_str(&format!(
         r#"{{"table_id":"{}","dimensions":[{{"column":"order_date","bucket":"month"}}],

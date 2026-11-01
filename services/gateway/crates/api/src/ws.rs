@@ -20,7 +20,7 @@ use axum::response::Response;
 use axum_extra::extract::cookie::CookieJar;
 use futures_util::future::join_all;
 use futures_util::{SinkExt as _, StreamExt as _};
-use lattice_planner::{Scalar, TableQuery};
+use lattice_planner::{Scalar, TableQuery, TimeBucket};
 use lattice_security::{Principal, ProjectRole};
 use lattice_visuals::{SheetContext, VisualSpec};
 use tokio::sync::mpsc;
@@ -467,21 +467,18 @@ async fn run_visual(
 ) {
     let started = Instant::now();
     let query_id = id.to_string();
-    let table = match query::resolve(state, project_id, spec.table_id).await {
-        Ok(t) => t,
-        Err(failure) => return send(tx, batch_id, &query_id, Err(failure)).await,
-    };
-    let parts = match lattice_visuals::compile(id, spec, drill, offset, context, &table.schema) {
-        Ok(parts) => parts,
-        Err(err) => {
-            let failure = QueryFailure::Failed {
-                code: "invalid_query",
-                message: err.to_string(),
-            };
-            return send(tx, batch_id, &query_id, Err(failure)).await;
-        }
-    };
-    let loaded = if parts.iter().any(|p| semantic::governed(&p.query)) {
+    // Metrics and fiscal periods come from the business logic.
+    let fiscal = [&spec.x, &spec.series]
+        .into_iter()
+        .flatten()
+        .chain(&spec.drill)
+        .any(|d| {
+            matches!(
+                d.bucket,
+                Some(TimeBucket::FiscalQuarter | TimeBucket::FiscalYear)
+            )
+        });
+    let loaded = if fiscal || spec.measures.iter().any(|m| m.metric.is_some()) {
         let cell = model
             .get_or_init(|| async {
                 semantic::load_for_project(state, project_id)
@@ -502,6 +499,23 @@ async fn run_visual(
         }
     } else {
         None
+    };
+    let mut table = match query::resolve(state, project_id, spec.table_id).await {
+        Ok(t) => t,
+        Err(failure) => return send(tx, batch_id, &query_id, Err(failure)).await,
+    };
+    if let Some(m) = &loaded {
+        table.schema.fiscal_year_start_month = m.model.fiscal_year_start_month;
+    }
+    let parts = match lattice_visuals::compile(id, spec, drill, offset, context, &table.schema) {
+        Ok(parts) => parts,
+        Err(err) => {
+            let failure = QueryFailure::Failed {
+                code: "invalid_query",
+                message: err.to_string(),
+            };
+            return send(tx, batch_id, &query_id, Err(failure)).await;
+        }
     };
     let today = chrono::Utc::now().date_naive();
     join_all(parts.into_iter().map(|part| {

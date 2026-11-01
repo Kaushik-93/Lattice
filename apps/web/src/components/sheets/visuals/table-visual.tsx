@@ -9,6 +9,8 @@ import type { QueryResult } from "@/lib/data/client";
 import { measureLabel } from "@/lib/sheets/charts";
 import { formatDimension, formatValue, toNumber } from "@/lib/sheets/values";
 
+import { useSheetEnv } from "../sheet-env";
+
 /** Rows per page the gateway returns for a raw-row table. */
 const PAGE = 500;
 
@@ -54,23 +56,19 @@ export function TableVisual({
   }, [result]);
 
   // Summaries: readable headers and the visual's number format.
+  const { fiscalStart } = useSheetEnv();
   const spec = visual.spec;
-  const labels = useMemo(
-    () => {
-      if (raw) return undefined;
-      const dims = [spec.x, spec.series].filter((d) => d !== undefined).map((d) => d.column);
-      const fields = table.schema.fields;
-      return dims.concat(
-        spec.measures.map((m, i) => measureLabel(m, fields[dims.length + i]?.name)),
-      );
-    },
-    [raw, spec, table],
-  );
+  const labels = useMemo(() => {
+    if (raw) return undefined;
+    const dims = [spec.x, spec.series].filter((d) => d !== undefined).map((d) => d.column);
+    const fields = table.schema.fields;
+    return dims.concat(spec.measures.map((m, i) => measureLabel(m, fields[dims.length + i]?.name)));
+  }, [raw, spec, table]);
   const formatCellAt = useCallback(
     (value: unknown, column: number): string | null => {
       const dims = [spec.x, spec.series].filter((d) => d !== undefined);
       const dim = dims[column];
-      if (dim) return formatDimension(value, table.schema.fields[column], dim);
+      if (dim) return formatDimension(value, table.schema.fields[column], dim, fiscalStart);
       const n = toNumber(value);
       const measure = spec.measures[column - dims.length];
       const agg = measure?.metric ? undefined : measure?.agg;
@@ -82,7 +80,7 @@ export function TableVisual({
             compact: false,
           });
     },
-    [spec, table],
+    [spec, table, fiscalStart],
   );
 
   return (
