@@ -1,4 +1,12 @@
-import type { BatchQuery, ClientMessage, ResultHeader, ServerMessage } from "@lattice/shared-types";
+import type {
+  BatchQuery,
+  ClientMessage,
+  ResultHeader,
+  ServerMessage,
+  SharedVisualRequest,
+  SheetContext,
+  VisualRequest,
+} from "@lattice/shared-types";
 import { tableFromIPC, type Table } from "apache-arrow";
 
 import { GATEWAY_URL } from "@/lib/gateway";
@@ -86,10 +94,55 @@ export class DataClient {
     return this.ready;
   }
 
-  /** Sends one batch. Earlier unfinished batches resolve as `superseded`. */
-  async run(
+  /** Sends table queries as one batch. Earlier unfinished batches resolve as `superseded`. */
+  run(
     projectId: string,
     queries: BatchQuery[],
+    onResult?: (result: QueryResult) => void,
+  ): Promise<BatchOutcome> {
+    return this.send(
+      (batchId) => ({ type: "query_batch", batch_id: batchId, project_id: projectId, queries }),
+      onResult,
+    );
+  }
+
+  /**
+   * Sends a sheet's visuals with its interactive state; the gateway compiles them. Results are
+   * keyed by visual id, plus `:compare` for a KPI's previous period.
+   */
+  runSheet(
+    projectId: string,
+    context: SheetContext,
+    visuals: VisualRequest[],
+    onResult?: (result: QueryResult) => void,
+  ): Promise<BatchOutcome> {
+    return this.send(
+      (batchId) => ({
+        type: "sheet_batch",
+        batch_id: batchId,
+        project_id: projectId,
+        context,
+        visuals,
+      }),
+      onResult,
+    );
+  }
+
+  /** Runs the saved visuals of a sheet opened through its share link. */
+  runShared(
+    token: string,
+    context: SheetContext,
+    visuals: SharedVisualRequest[],
+    onResult?: (result: QueryResult) => void,
+  ): Promise<BatchOutcome> {
+    return this.send(
+      (batchId) => ({ type: "shared_batch", batch_id: batchId, token, context, visuals }),
+      onResult,
+    );
+  }
+
+  private async send(
+    build: (batchId: number) => ClientMessage,
     onResult?: (result: QueryResult) => void,
   ): Promise<BatchOutcome> {
     const socket = await this.connect();
@@ -100,12 +153,7 @@ export class DataClient {
     this.pending.clear();
 
     const batchId = this.nextBatchId++;
-    const message: ClientMessage = {
-      type: "query_batch",
-      batch_id: batchId,
-      project_id: projectId,
-      queries,
-    };
+    const message = build(batchId);
     return new Promise<BatchOutcome>((resolve) => {
       this.pending.set(batchId, {
         sentAt: performance.now(),
@@ -161,6 +209,13 @@ export class DataClient {
         code: message.code,
         message: message.message,
       });
+    } else if (message.type === "error") {
+      // The gateway ends the socket after this (e.g. an expired session): fail what's waiting.
+      for (const [, batch] of this.pending) {
+        batch.outcome.errors.push({ queryId: "*", code: message.code, message: message.message });
+        batch.resolve(batch.outcome);
+      }
+      this.pending.clear();
     } else if (message.type === "batch_done") {
       const batch = this.pending.get(message.batch_id);
       if (batch) {
@@ -172,10 +227,17 @@ export class DataClient {
   }
 }
 
-let shared: DataClient | null = null;
+const clients = new Map<string, DataClient>();
 
-/** The page's data connection, opened on first use. */
-export function dataClient(): DataClient {
-  shared ??= new DataClient();
-  return shared;
+/**
+ * A data connection, opened on first use. Each channel is its own socket, so its batches
+ * don't cancel another's: the sheet's batch and a table visual's next page run side by side.
+ */
+export function dataClient(channel = "main"): DataClient {
+  let client = clients.get(channel);
+  if (!client) {
+    client = new DataClient();
+    clients.set(channel, client);
+  }
+  return client;
 }

@@ -27,6 +27,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { capitalize } from "@/lib/format";
 import { useLogout, useMe, useProjects } from "@/lib/queries";
+import { useSheets } from "@/lib/sheets/api";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 
@@ -83,9 +84,14 @@ export function Sidebar() {
           >
             Overview
           </NavItem>
-          <NavItem href={`/projects/${projectId}#sheets`} icon={<Table2 className="size-[18px]" />}>
+          <NavItem
+            href={`/projects/${projectId}/sheets`}
+            icon={<Table2 className="size-[18px]" />}
+            active={pathname.startsWith(`/projects/${projectId}/sheets`)}
+          >
             Sheets
           </NavItem>
+          <SheetLinks projectId={projectId} pathname={pathname} />
           <NavItem
             href={`/projects/${projectId}/sources`}
             icon={<Database className="size-[18px]" />}
@@ -94,8 +100,9 @@ export function Sidebar() {
             Sources
           </NavItem>
           <NavItem
-            href={`/projects/${projectId}#members`}
+            href={`/projects/${projectId}/sharing`}
             icon={<Share2 className="size-[18px]" />}
+            active={pathname.startsWith(`/projects/${projectId}/sharing`)}
           >
             Members &amp; sharing
           </NavItem>
@@ -120,6 +127,42 @@ export function Sidebar() {
       <div className="flex-1" />
       <UserMenu />
     </SidebarFrame>
+  );
+}
+
+/** The project's sheets under "Sheets", as in the design. On a sheet page, switching is a
+ * client-side tab change (no server round trip). */
+function SheetLinks({ projectId, pathname }: { projectId: string; pathname: string }) {
+  const sheets = useSheets(projectId);
+  const onSheets = pathname.startsWith(`/projects/${projectId}/sheets`);
+  return (
+    <ul className="mb-1 flex flex-col">
+      {(sheets.data ?? []).slice(0, 8).map((sheet) => {
+        const href = `/projects/${projectId}/sheets/${sheet.id}`;
+        const active = pathname === href;
+        return (
+          <li key={sheet.id}>
+            <Link
+              href={href}
+              aria-current={active ? "page" : undefined}
+              onClick={(e) => {
+                if (!onSheets || e.metaKey || e.ctrlKey) return;
+                e.preventDefault();
+                window.history.pushState(null, "", href);
+              }}
+              className={cn(
+                "flex h-9 items-center truncate rounded-lg pl-[38px] text-[13px] no-underline",
+                active
+                  ? "font-semibold text-accent-foreground"
+                  : "text-secondary-foreground hover:bg-secondary hover:text-foreground",
+              )}
+            >
+              <span className="truncate">{sheet.name}</span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

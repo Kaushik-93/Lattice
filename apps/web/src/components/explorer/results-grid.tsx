@@ -3,7 +3,9 @@
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DataType, type Field, type Table } from "apache-arrow";
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
+
+import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT = 32;
 const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -36,7 +38,23 @@ function isNumeric(field: Field): boolean {
  * A virtualized grid over an Arrow table. Rows are never copied into JS objects: each cell
  * reads its column vector by row index, and only the visible rows render.
  */
-export const ResultsGrid = memo(function ResultsGrid({ table }: { table: Table }) {
+export const ResultsGrid = memo(function ResultsGrid({
+  table,
+  className,
+  onNearEnd,
+  labels,
+  format,
+}: {
+  table: Table;
+  /** Overrides the default size (a grid inside a sheet card fills the card). */
+  className?: string;
+  /** Called when the last rows scroll into view (windowed fetch of the next page). */
+  onNearEnd?: () => void;
+  /** Column headers in place of the result's column names. */
+  labels?: string[];
+  /** Formats a cell; null falls back to the default formatting. */
+  format?: (value: unknown, column: number) => string | null;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fields = table.schema.fields;
 
@@ -46,13 +64,13 @@ export const ResultsGrid = memo(function ResultsGrid({ table }: { table: Table }
         const vector = table.getChildAt(i);
         return {
           id: field.name,
-          header: field.name,
+          header: labels?.[i] ?? field.name,
           accessorFn: (row: number) => vector?.get(row) as unknown,
-          cell: (ctx) => formatCell(ctx.getValue(), field),
+          cell: (ctx) => format?.(ctx.getValue(), i) ?? formatCell(ctx.getValue(), field),
           meta: { numeric: isNumeric(field) },
         };
       }),
-    [table, fields],
+    [table, fields, labels, format],
   );
   const rowIndexes = useMemo(() => Array.from({ length: table.numRows }, (_, i) => i), [table]);
   const grid = useReactTable({ data: rowIndexes, columns, getCoreRowModel: getCoreRowModel() });
@@ -63,6 +81,11 @@ export const ResultsGrid = memo(function ResultsGrid({ table }: { table: Table }
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
   });
+  const items = virtualizer.getVirtualItems();
+  const lastVisible = items.at(-1)?.index ?? 0;
+  useEffect(() => {
+    if (onNearEnd && rows.length > 0 && lastVisible >= rows.length - 20) onNearEnd();
+  }, [onNearEnd, lastVisible, rows.length]);
   const template = `repeat(${fields.length}, minmax(120px, 1fr))`;
 
   return (
@@ -70,7 +93,10 @@ export const ResultsGrid = memo(function ResultsGrid({ table }: { table: Table }
       ref={scrollRef}
       role="grid"
       aria-rowcount={rows.length}
-      className="max-h-[480px] overflow-auto rounded-[10px] border border-border bg-card text-[13px]"
+      className={cn(
+        "overflow-auto rounded-[10px] border border-border bg-card text-[13px]",
+        className ?? "max-h-[480px]",
+      )}
     >
       <div
         role="row"
@@ -94,7 +120,7 @@ export const ResultsGrid = memo(function ResultsGrid({ table }: { table: Table }
           minWidth: fields.length * 120,
         }}
       >
-        {virtualizer.getVirtualItems().map((item) => {
+        {items.map((item) => {
           const row = rows[item.index];
           if (!row) return null;
           return (

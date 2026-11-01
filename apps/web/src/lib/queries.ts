@@ -1,7 +1,9 @@
 "use client";
 
 import type {
+  AddProjectMemberRequest,
   AuthProvidersResponse,
+  ProjectRole,
   CreateDatabaseSourceRequest,
   SourceDetail,
   SourceListResponse,
@@ -13,7 +15,13 @@ import type {
   ProjectSummary,
   SignupRequest,
 } from "@lattice/shared-types";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 
 import { ApiError, api } from "@/lib/gateway";
 
@@ -202,6 +210,80 @@ export function useProfileTable(projectId: string) {
       ),
     onSuccess: (detail) => sourceChanged(client, projectId, detail),
   });
+}
+
+function memberMutation<V>(projectId: string, request: (v: V) => Promise<ProjectDetail>) {
+  return function useMemberMutation() {
+    const client = useQueryClient();
+    return useMutation({
+      mutationFn: request,
+      onSuccess: (detail) => {
+        client.setQueryData(queryKeys.project(projectId), detail);
+        void client.invalidateQueries({ queryKey: queryKeys.projects, exact: true });
+      },
+    });
+  };
+}
+
+/** Gives someone in the workspace a role in the project (or changes it). */
+export function useAddProjectMember(projectId: string) {
+  return memberMutation(projectId, (req: AddProjectMemberRequest) =>
+    api<ProjectDetail>(`/api/projects/${projectId}/members`, { method: "POST", body: req }),
+  )();
+}
+
+export function useUpdateProjectMember(projectId: string) {
+  return memberMutation(projectId, ({ userId, role }: { userId: string; role: ProjectRole }) =>
+    api<ProjectDetail>(`/api/projects/${projectId}/members/${userId}`, {
+      method: "PATCH",
+      body: { role },
+    }),
+  )();
+}
+
+export function useRemoveProjectMember(projectId: string) {
+  return memberMutation(projectId, (userId: string) =>
+    api<ProjectDetail>(`/api/projects/${projectId}/members/${userId}`, { method: "DELETE" }),
+  )();
+}
+
+export interface CatalogTable {
+  id: string;
+  name: string;
+  source: string;
+  rowCount: number | null;
+  columns: { name: string; data_type: string; min: string | null; max: string | null }[];
+}
+
+/** Every table in the project with its columns (the visual editor's field lists). */
+export function useProjectTables(projectId: string): { tables: CatalogTable[]; loading: boolean } {
+  const sources = useSources(projectId);
+  const details = useQueries({
+    queries: (sources.data ?? []).map((s) => ({
+      queryKey: queryKeys.source(projectId, s.id),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        api<SourceDetail>(
+          `/api/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(s.id)}`,
+          { signal },
+        ),
+      staleTime: 60_000,
+    })),
+  });
+  const tables = details.flatMap((d) =>
+    (d.data?.tables ?? []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      source: d.data?.source.name ?? "",
+      rowCount: t.row_count,
+      columns: t.columns.map((c) => ({
+        name: c.name,
+        data_type: c.data_type,
+        min: c.profile?.min ?? null,
+        max: c.profile?.max ?? null,
+      })),
+    })),
+  );
+  return { tables, loading: sources.isPending || details.some((d) => d.isPending) };
 }
 
 export function useSourcesInvalidation(projectId: string) {

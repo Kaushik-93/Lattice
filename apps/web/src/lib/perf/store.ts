@@ -63,6 +63,17 @@ export interface QuerySample {
   at: number;
 }
 
+/** A sheet interaction (filter, cross-filter, drill, sheet switch) until every visual showed
+ * its new data. */
+export interface SheetSample {
+  visuals: number;
+  /** Visuals whose data actually changed (the rest were unaffected cache hits). */
+  changed: number;
+  /** Interaction → last result rendered (the cross-filter budget, spec §3). */
+  ms: number;
+  at: number;
+}
+
 export interface CommitSample {
   id: string;
   phase: string;
@@ -76,6 +87,7 @@ export const perf = {
   longTasks: new Ring<number>(100),
   commits: new Ring<CommitSample>(50),
   queries: new Ring<QuerySample>(20),
+  sheets: new Ring<SheetSample>(20),
   vitals: {} as Partial<Record<"ttfb" | "fcp" | "lcp" | "dcl" | "load", number>>,
 };
 
