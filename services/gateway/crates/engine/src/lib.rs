@@ -180,15 +180,83 @@ async fn wait_until_closed(open: &mut Open, project_id: Uuid) -> Result<(), Engi
     }
 }
 
+/// File stems DuckDB installs for [`EXTENSIONS`] (aliases resolve to these).
+const EXTENSION_FILES: [&str; 4] = [
+    "postgres_scanner",
+    "mysql_scanner",
+    "sqlite_scanner",
+    "excel",
+];
+const STAGING_PREFIX: &str = ".staging-";
+
+/// Installs the extensions into `dir`. Several processes may do this at once (parallel test
+/// processes, gateways sharing a volume) and DuckDB writes extension files in place, so each
+/// installer downloads into its own staging directory and renames the finished files into
+/// `dir` (atomic per file): a reader sees no file or a whole one. A directory that already
+/// holds every extension is left alone.
 fn install_extensions(dir: &Path) -> Result<(), EngineError> {
     std::fs::create_dir_all(dir)?;
-    let conn = Connection::open_in_memory_with_flags(
-        Config::default().with("extension_directory", path_str(dir)?)?,
-    )?;
-    for ext in EXTENSIONS {
-        conn.execute_batch(&format!("INSTALL {ext}"))?;
+    let installed = files_under(dir)?;
+    let has = |stem: &str| {
+        let name = format!("{stem}.duckdb_extension");
+        installed
+            .iter()
+            .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(name.as_str()))
+    };
+    if EXTENSION_FILES.iter().all(|stem| has(stem)) {
+        return Ok(());
     }
-    Ok(())
+
+    let staging = dir.join(format!("{STAGING_PREFIX}{}", uuid::Uuid::new_v4().simple()));
+    let result = (|| {
+        let conn = Connection::open_in_memory_with_flags(
+            Config::default().with("extension_directory", path_str(&staging)?)?,
+        )?;
+        for ext in EXTENSIONS {
+            conn.execute_batch(&format!("INSTALL {ext}"))?;
+        }
+        drop(conn);
+        // Metadata first, so an extension file never appears without its `.info`.
+        let mut files = files_under(&staging)?;
+        files.sort_by_key(|p| p.extension().is_none_or(|e| e != "info"));
+        for file in files {
+            let relative = file
+                .strip_prefix(&staging)
+                .map_err(|_| EngineError::Path(file.display().to_string()))?;
+            let target = dir.join(relative);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::rename(&file, &target)?;
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&staging);
+    result
+}
+
+/// Every file below `dir`, skipping other installers' staging directories.
+fn files_under(dir: &Path) -> Result<Vec<std::path::PathBuf>, EngineError> {
+    let mut files = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(d) = pending.pop() {
+        for entry in std::fs::read_dir(&d)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                let staging = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with(STAGING_PREFIX));
+                if !staging {
+                    pending.push(path);
+                }
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    Ok(files)
 }
 
 pub(crate) fn path_str(path: &Path) -> Result<&str, EngineError> {

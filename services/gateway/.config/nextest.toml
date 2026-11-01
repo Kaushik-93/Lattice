@@ -1,0 +1,7 @@
+# `cargo nextest run --profile ci`: run everything even after a failure, and write JUnit so
+# CI can turn failures into annotations (job logs are only readable by repository admins).
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"

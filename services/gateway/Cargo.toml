@@ -77,6 +77,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 ts-rs = { version = "12", features = ["uuid-impl", "chrono-impl", "serde-compat"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
+# DuckDB's C++ at -O0 makes debug builds' queries (and so the test suite and its timing
+# assertions) many times slower than what ships. Optimise it everywhere; Rust stays debug.
+[profile.dev.package.libduckdb-sys]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

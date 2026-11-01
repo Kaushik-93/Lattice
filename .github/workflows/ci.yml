@@ -64,7 +64,10 @@ jobs:
           SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
       - name: Tests
         working-directory: services/gateway
-        run: cargo nextest run --workspace
+        run: cargo nextest run --workspace --profile ci
+      - name: Failed tests as annotations
+        if: failure()
+        run: python3 scripts/junit-annotations.py services/gateway/target/nextest/ci/junit.xml
       - uses: astral-sh/setup-uv@v6
         with:
           version: ${{ env.UV_VERSION }}
