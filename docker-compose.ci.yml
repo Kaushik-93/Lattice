@@ -1,0 +1,20 @@
+# CI-only override: build images through BuildKit with the GitHub Actions layer cache, so the
+# gateway's DuckDB compile (the slow part of a cold build) is paid once, not on every run.
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml build
+services:
+  web:
+    build:
+      cache_from: [type=gha,scope=web]
+      cache_to: [type=gha,scope=web,mode=max]
+  gateway:
+    build:
+      cache_from: [type=gha,scope=gateway]
+      cache_to: [type=gha,scope=gateway,mode=max]
+  ai:
+    build:
+      cache_from: [type=gha,scope=ai]
+      cache_to: [type=gha,scope=ai,mode=max]
+  postgres:
+    build:
+      cache_from: [type=gha,scope=postgres]
+      cache_to: [type=gha,scope=postgres,mode=max]

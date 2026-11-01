@@ -9,7 +9,7 @@ AI := services/ai
 WEB := apps/web
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs dev seed gen sqlx-prepare install lint test test-gateway test-ai test-web e2e bench ci clean
+.PHONY: help up down logs dev seed seed-bench gen sqlx-prepare install lint test test-gateway test-ai test-web e2e bench bench-ws ci clean
 
 help: ## List commands
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[1m%-14s\033[0m %s\n", $$1, $$2}'
@@ -28,6 +28,9 @@ dev: ## Infra in Docker, gateway/AI/web native with hot reload
 
 seed: ## Create the demo workspace (demo@lattice.dev / lattice-demo) if missing
 	docker compose exec gateway /usr/local/bin/gateway seed
+
+seed-bench: ## Add the "Benchmark · 50M orders" project to the running stack (ROWS=50000000)
+	docker compose exec gateway /usr/local/bin/gateway seed-bench $(or $(ROWS),50000000)
 
 gen: ## Regenerate cross-language contracts (proto → Python, Rust → TypeScript)
 	./scripts/gen.sh
@@ -59,9 +62,12 @@ test-web:
 e2e: ## Playwright e2e + latency-budget tests against the running stack
 	cd $(WEB) && npx playwright test
 
-bench: ## Criterion micro-benchmarks + live gateway latency
+bench: ## Criterion benchmarks (incl. 50M-row engine aggregations) + live gateway latency
 	cd $(GATEWAY) && cargo bench --workspace --bench '*'
 	python3 scripts/bench-gateway.py
+
+bench-ws: ## End-to-end query latency over the data socket (needs `make seed-bench`)
+	node scripts/bench-ws.mjs
 
 ci: lint test ## What CI runs before the Docker/e2e job, plus a contract drift check
 	./scripts/gen.sh && git diff --exit-code -- packages/shared-types $(AI)/src/lattice

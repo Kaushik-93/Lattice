@@ -19,7 +19,8 @@ jobs:
     name: Gateway (Rust)
     runs-on: ubuntu-24.04
     services:
-      # Plain Postgres is enough here: phase 0 tests use neither AGE nor pgvector.
+      # Plain Postgres is enough here: these tests use neither AGE nor pgvector. (DuckDB's
+      # postgres extension attaches this server in the live-source tests.)
       postgres:
         image: postgres:18.6-trixie
         env:
@@ -30,8 +31,15 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U lattice -d lattice"
           --health-interval 2s --health-timeout 3s --health-retries 30
+      # The result-cache tests read and write Redis.
+      redis:
+        image: redis:7.4.12-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
     env:
       DATABASE_URL: postgres://lattice:lattice@localhost:5432/lattice
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v5
       - name: Rust toolchain (pinned by rust-toolchain.toml)
@@ -155,10 +163,18 @@ jobs:
     needs: [gateway, ai, web]
     steps:
       - uses: actions/checkout@v5
-      - name: docker compose up (clean build)
+      - uses: docker/setup-buildx-action@v3
+      # Exposes the Actions cache to BuildKit (type=gha in docker-compose.ci.yml).
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Build images (BuildKit, GitHub Actions layer cache)
         run: |
           start=$(date +%s)
-          docker compose up -d --build --wait
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml build
+          echo "image_build_seconds=$(( $(date +%s) - start ))" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: docker compose up
+        run: |
+          start=$(date +%s)
+          docker compose up -d --wait
           echo "compose_up_seconds=$(( $(date +%s) - start ))" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Readiness
         run: curl -fsS http://localhost:8080/readyz | tee /dev/stderr | grep -q '"status":"ready"'
@@ -173,11 +189,15 @@ jobs:
         run: npm run e2e
       - name: Gateway latency
         run: python3 scripts/bench-gateway.py -n 2000
+      - name: End-to-end query latency on 50M rows
+        run: |
+          docker compose exec -T gateway /usr/local/bin/gateway seed-bench 50000000
+          node scripts/bench-ws.mjs -n 5
       - name: Results
         if: always()
         run: |
           {
-            echo '### Phase 0 timings'
+            echo '### Timings'
             echo '```json'
             cat perf-results/*.json 2>/dev/null || true
             echo '```'
