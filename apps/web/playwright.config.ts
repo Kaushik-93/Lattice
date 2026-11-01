@@ -19,7 +19,13 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
+        // Headless Chromium defaults to software WebGL (SwiftShader); use the GPU when there
+        // is one, as users' browsers do. GPU-less CI runners still fall back to software.
+        launchOptions: { args: ["--enable-gpu", "--ignore-gpu-blocklist"] },
+      },
     },
   ],
 });

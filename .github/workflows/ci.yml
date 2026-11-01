@@ -114,6 +114,16 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      # The compute worker's WebAssembly is committed prebuilt (docs/adr/0005): its algorithms
+      # are tested natively, and the package must have been built from the current sources.
+      - name: WebAssembly package (tests, lint, built from current sources)
+        working-directory: packages/wasm
+        run: |
+          rustup toolchain install
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+          ../../scripts/build-wasm.sh --check
       - name: Production build
         run: npm run build
 
