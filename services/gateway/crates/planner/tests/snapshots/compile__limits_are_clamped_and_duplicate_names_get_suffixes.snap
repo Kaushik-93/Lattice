@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"dimensions\": [{ \"column\": \"region\" }], \"measures\":\n    [{ \"column\": \"amount\", \"agg\": \"sum\" },\n    { \"column\": \"amount\", \"agg\": \"sum\" }], \"limit\": 5000000\n}))"
+---
+SELECT "region" AS "region", sum("amount") AS "sum_amount", sum("amount") AS "sum_amount_2" FROM "project"."s_demo"."orders" GROUP BY ALL ORDER BY "region" ASC NULLS LAST LIMIT 100001
+-- params: []
+-- columns: region:Dimension, sum_amount:Measure, sum_amount_2:Measure
+-- row_limit: 100000

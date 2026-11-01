@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"dimensions\": [{ \"column\": \"category\" }], \"measures\":\n    [{ \"column\": \"amount\", \"agg\": \"sum\" }], \"sort\":\n    [{ \"by\": \"sum_amount\", \"dir\": \"desc\" }], \"limit\": 10\n}))"
+---
+SELECT "category" AS "category", sum("amount") AS "sum_amount" FROM "project"."s_demo"."orders" GROUP BY ALL ORDER BY "sum_amount" DESC NULLS LAST LIMIT 11
+-- params: []
+-- columns: category:Dimension, sum_amount:Measure
+-- row_limit: 10

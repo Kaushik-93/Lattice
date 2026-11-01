@@ -2,11 +2,13 @@
 //! audit log. Later phases add credential encryption and row-level security here.
 
 pub mod audit;
+pub mod crypto;
 pub mod identity;
 pub mod password;
 pub mod rbac;
 pub mod token;
 
+pub use crypto::{CryptoError, SecretBox};
 pub use identity::{IdentityError, Principal, SessionStore};
 pub use rbac::{Permission, ProjectRole, WorkspaceRole};
 pub use token::SessionToken;

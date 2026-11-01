@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"dimensions\":\n    [{ \"column\": \"created_at\", \"bucket\": \"day\" },\n    { \"column\": \"order_date\", \"bucket\": \"week\" }], \"measures\":\n    [{ \"column\": \"customer\", \"agg\": \"count_distinct\" },\n    { \"column\": \"customer\", \"agg\": \"approx_count_distinct\" }]\n}))"
+---
+SELECT CAST("created_at" AS DATE) AS "created_at_day", CAST(date_trunc('week', "order_date") AS DATE) AS "order_date_week", count(DISTINCT "customer") AS "count_distinct_customer", approx_count_distinct("customer") AS "approx_count_distinct_customer" FROM "project"."s_demo"."orders" GROUP BY ALL ORDER BY "created_at_day" ASC NULLS LAST, "order_date_week" ASC NULLS LAST LIMIT 10001
+-- params: []
+-- columns: created_at_day:Dimension, order_date_week:Dimension, count_distinct_customer:Measure, approx_count_distinct_customer:Measure
+-- row_limit: 10000

@@ -20,20 +20,34 @@ todo = "deny"
 [workspace.dependencies]
 lattice-aibridge = { path = "crates/aibridge" }
 lattice-api = { path = "crates/api" }
+lattice-cache = { path = "crates/cache" }
+lattice-catalog = { path = "crates/catalog" }
+lattice-connectors = { path = "crates/connectors" }
+lattice-engine = { path = "crates/engine" }
+lattice-planner = { path = "crates/planner" }
 lattice-project = { path = "crates/project" }
 lattice-security = { path = "crates/security" }
 lattice-telemetry = { path = "crates/telemetry" }
 
+aes-gcm = "0.10"
 anyhow = "1"
+# The arrow version DuckDB 1.5.6 links; ipc for browser frames.
+arrow = { version = "58", default-features = false, features = ["ipc"] }
 argon2 = "0.5"
-axum = { version = "0.8", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 base64 = "0.22"
+calamine = "0.37"
 cookie = "0.18"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
 criterion = { version = "0.8", features = ["async_tokio"] }
+# DuckDB 1.5.6 (crate 1.10506.x). 2.0.0 was ten days old at pin time; see docs/adr/0004.
+duckdb = { version = "~1.10506.1", features = ["bundled", "parquet", "json"] }
 futures-util = "0.3"
 http = "1"
+insta = "1"
+# 0.12 shares reqwest 0.12 with openidconnect (0.13+ would pull a second reqwest).
+object_store = { version = "0.12", default-features = false, features = ["aws"] }
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 opentelemetry = "0.33"
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["grpc-tonic", "trace"] }
@@ -48,6 +62,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate", "uuid", "chrono", "json"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "io-util"] }
+tokio-util = "0.7"
 tokio-stream = { version = "0.1", features = ["net"] }
 tonic = "0.14"
 tonic-health = "0.14"

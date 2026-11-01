@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"measures\": [{ \"agg\": \"count\" }], \"filters\":\n    [{\n        \"column\": \"order_date\", \"op\": \"between\", \"value\":\n        [\"2026-01-01\", \"2026-03-31\"]\n    }, { \"column\": \"region\", \"op\": \"in\", \"value\": [\"EMEA\", \"APAC\"] },\n    { \"column\": \"store\", \"op\": \"eq\", \"value\": 42 },\n    { \"column\": \"amount\", \"op\": \"gte\", \"value\": 9.99 },\n    { \"column\": \"is_online\", \"op\": \"eq\", \"value\": true },\n    { \"column\": \"category\", \"op\": \"contains\", \"value\": \"kitchen\" },\n    { \"column\": \"customer\", \"op\": \"is_not_null\" }]\n}))"
+---
+SELECT count(*) AS "count" FROM "project"."s_demo"."orders" WHERE "order_date" BETWEEN CAST(? AS DATE) AND CAST(? AS DATE) AND "region" IN (?, ?) AND "store" = ? AND "amount" >= ? AND "is_online" = ? AND contains(lower(CAST("category" AS VARCHAR)), lower(?)) AND "customer" IS NOT NULL LIMIT 10001
+-- params: [Text("2026-01-01"), Text("2026-03-31"), Text("EMEA"), Text("APAC"), BigInt(42), Double(9.99), Bool(true), Text("kitchen")]
+-- columns: count:Measure
+-- row_limit: 10000

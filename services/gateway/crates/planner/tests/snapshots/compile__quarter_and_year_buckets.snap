@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"dimensions\":\n    [{ \"column\": \"created_at\", \"bucket\": \"quarter\" },\n    { \"column\": \"order_date\", \"bucket\": \"year\" }], \"measures\":\n    [{ \"column\": \"amount\", \"agg\": \"avg\" }]\n}))"
+---
+SELECT make_date("k0_y", ("k0_q" - 1) * 3 + 1, 1) AS "created_at_quarter", make_date("k1_y", 1, 1) AS "order_date_year", "m0" AS "avg_amount" FROM (SELECT year("created_at") AS "k0_y", quarter("created_at") AS "k0_q", year("order_date") AS "k1_y", avg("amount") AS "m0" FROM "project"."s_demo"."orders" GROUP BY ALL) ORDER BY "created_at_quarter" ASC NULLS LAST, "order_date_year" ASC NULLS LAST LIMIT 10001
+-- params: []
+-- columns: created_at_quarter:Dimension, order_date_year:Dimension, avg_amount:Measure
+-- row_limit: 10000

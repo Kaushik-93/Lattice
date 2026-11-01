@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"filters\": [{ \"column\": \"region\", \"op\": \"neq\", \"value\": \"AMER\" }], \"sort\":\n    [{ \"by\": \"amount\", \"dir\": \"desc\" }], \"limit\": 50, \"offset\": 100\n}))"
+---
+SELECT "order_date", "created_at", "region", "category", "store", "customer", "amount", "is_online", "we""ird name" FROM "project"."s_demo"."orders" WHERE "region" <> ? ORDER BY "amount" DESC NULLS LAST LIMIT 51 OFFSET 100
+-- params: [Text("AMER")]
+-- columns: order_date:Column, created_at:Column, region:Column, category:Column, store:Column, customer:Column, amount:Column, is_online:Column, we"ird name:Column
+-- row_limit: 50
