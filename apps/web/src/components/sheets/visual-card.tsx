@@ -5,6 +5,7 @@ import type { Field } from "apache-arrow";
 import {
   ChevronRight,
   CircleAlert,
+  CircleDashed,
   Copy,
   Download,
   Grip,
@@ -280,19 +281,23 @@ export const VisualCard = memo(function VisualCard({ visual }: { visual: Visual 
         )}
         {unapproved.length > 0 ? (
           <span
-            className="flex items-center gap-1 rounded bg-warning-surface px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-warning"
+            className={cn(
+              "flex flex-none items-center gap-1 rounded bg-warning-surface text-[11px] font-medium whitespace-nowrap text-warning",
+              isKpi ? "p-1" : "px-1.5 py-0.5",
+            )}
             title={`Uses logic that isn't approved yet: ${unapproved.map((u) => u.title).join(", ")}`}
           >
             <CircleAlert className="size-3" aria-hidden />
-            Unapproved logic
+            <span className={cn(isKpi && "sr-only")}>Unapproved logic</span>
           </span>
         ) : (
           ungoverned && (
             <span
-              className="px-1 py-0.5 text-[11px] whitespace-nowrap text-subtle-foreground"
+              className="flex flex-none items-center gap-1 px-1 py-0.5 text-[11px] whitespace-nowrap text-subtle-foreground"
               title="Computed from raw columns, not from an approved metric"
             >
-              Not governed
+              {isKpi && <CircleDashed className="size-3" aria-hidden />}
+              <span className={cn(isKpi && "sr-only")}>Not governed</span>
             </span>
           )
         )}

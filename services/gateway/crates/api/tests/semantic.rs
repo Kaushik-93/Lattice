@@ -726,3 +726,58 @@ async fn fiscal_periods_follow_the_fiscal_calendar(pool: PgPool) {
         );
     }
 }
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn comparisons_move_relative_dates_back(pool: PgPool) {
+    let d = demo(pool).await;
+    let loaded = lattice_api::semantic::load(&d.h.state, d.workspace, d.project)
+        .await
+        .unwrap();
+    let orders = loaded
+        .model
+        .entity("order")
+        .unwrap()
+        .table
+        .as_ref()
+        .unwrap()
+        .table_id;
+    let active = id_of(&loaded.model, "Active customer");
+    let spec: lattice_visuals::VisualSpec = serde_json::from_value(json!({
+        "kind": "kpi", "title": "Active customers", "table_id": orders,
+        "measures": [{ "agg": "sum", "metric": active }],
+        "options": { "compare": "order_date" }
+    }))
+    .unwrap();
+    let ctx: lattice_visuals::SheetContext = serde_json::from_value(json!({ "filters": [
+        { "column": "order_date", "op": "between", "value": ["2026-08-01", "2026-10-31"] }
+    ] }))
+    .unwrap();
+    let schema = lattice_api::query::resolve(&d.h.state, d.project, orders)
+        .await
+        .unwrap()
+        .schema;
+    let parts = lattice_visuals::compile(Uuid::nil(), &spec, &[], None, &ctx, &schema).unwrap();
+    let today = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+    let mut values = Vec::new();
+    for part in &parts {
+        let p = lattice_api::semantic::prepare(&loaded, part, today).unwrap();
+        let text = rows(
+            &d.h.state,
+            d.project,
+            p.compiled.sql.trim_end(),
+            p.compiled.params,
+        )
+        .await;
+        let n: f64 = text
+            .rsplit(": ")
+            .next()
+            .unwrap()
+            .trim_end_matches('}')
+            .parse()
+            .unwrap();
+        values.push(n);
+    }
+    // Customers active in the 90 days before 1 Nov, against those before 1 Aug.
+    assert_eq!(values.len(), 2);
+    assert!(values[0] > 0.0 && values[1] > 0.0, "{values:?}");
+}

@@ -33,6 +33,8 @@ pub struct VisualQuery {
     /// metrics names its output columns only once the semantic model compiles it, so it sorts
     /// from this.
     pub sort: Option<(SortBy, SortDir)>,
+    /// For a comparison, how far back it looks.
+    pub shift: Option<Shift>,
 }
 
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -227,7 +229,7 @@ pub fn compile(
     let mut out = Vec::with_capacity(2);
     if spec.kind == VisualKind::Kpi
         && let Some(column) = &spec.options.compare
-        && let Some(previous) = earlier(&query.filters, column, spec.options.compare_to)
+        && let Some((previous, shift)) = earlier(&query.filters, column, spec.options.compare_to)
     {
         let mut compare = query.clone();
         compare.filters = previous;
@@ -235,17 +237,20 @@ pub fn compile(
             part: QueryPart::Main,
             query,
             sort,
+            shift: None,
         });
         out.push(VisualQuery {
             part: QueryPart::Compare,
             query: compare,
             sort,
+            shift: Some(shift),
         });
     } else {
         out.push(VisualQuery {
             part: QueryPart::Main,
             query,
             sort,
+            shift: None,
         });
     }
     Ok(out)
@@ -351,7 +356,7 @@ fn parse_date(text: &str) -> Result<NaiveDate, VisualError> {
 /// months compare with the months before (Aug–Oct → May–Jul) and a to-date range with the same
 /// stretch of the previous period (1 Aug–15 Oct → 1 May–15 Jul); other ranges shift by their
 /// length in days. The same period last year shifts both ends by a year.
-fn earlier(filters: &[Filter], column: &str, to: CompareTo) -> Option<Vec<Filter>> {
+fn earlier(filters: &[Filter], column: &str, to: CompareTo) -> Option<(Vec<Filter>, Shift)> {
     let i = filters
         .iter()
         .position(|f| f.column == column && f.op == FilterOp::Between)?;
@@ -365,26 +370,35 @@ fn earlier(filters: &[Filter], column: &str, to: CompareTo) -> Option<Vec<Filter
     if end < start {
         return None;
     }
-    let (prev_start, prev_end) = match to {
+    let (prev_start, prev_end, shift) = match to {
         CompareTo::PreviousYear => (
             start.checked_sub_months(Months::new(12))?,
             end.checked_sub_months(Months::new(12))?,
+            Shift::Months(12),
         ),
         CompareTo::PreviousPeriod if start.day() == 1 => {
             let months =
                 (end.year() - start.year()) * 12 + end.month() as i32 - start.month() as i32 + 1;
-            let months = Months::new(u32::try_from(months).ok()?);
+            let months = u32::try_from(months).ok()?;
             let whole = end.checked_add_days(Days::new(1))?.day() == 1;
             let prev_end = if whole {
                 start.pred_opt()?
             } else {
-                end.checked_sub_months(months)?
+                end.checked_sub_months(Months::new(months))?
             };
-            (start.checked_sub_months(months)?, prev_end)
+            (
+                start.checked_sub_months(Months::new(months))?,
+                prev_end,
+                Shift::Months(months),
+            )
         }
         CompareTo::PreviousPeriod => {
-            let days = Days::new(u64::try_from((end - start).num_days() + 1).ok()?);
-            (start.checked_sub_days(days)?, start.pred_opt()?)
+            let days = u64::try_from((end - start).num_days() + 1).ok()?;
+            (
+                start.checked_sub_days(Days::new(days))?,
+                start.pred_opt()?,
+                Shift::Days(days),
+            )
         }
     };
     let mut shifted = filters.to_vec();
@@ -392,5 +406,22 @@ fn earlier(filters: &[Filter], column: &str, to: CompareTo) -> Option<Vec<Filter
         Scalar::Text(prev_start.to_string()),
         Scalar::Text(prev_end.to_string()),
     ]));
-    Some(shifted)
+    Some((shifted, shift))
+}
+
+/// How far back a comparison looks. Relative dates in definitions ("the last 90 days") move
+/// back with it, so the earlier period is measured as it was then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shift {
+    Months(u32),
+    Days(u64),
+}
+
+impl Shift {
+    pub fn back(self, date: NaiveDate) -> Option<NaiveDate> {
+        match self {
+            Shift::Months(m) => date.checked_sub_months(Months::new(m)),
+            Shift::Days(d) => date.checked_sub_days(Days::new(d)),
+        }
+    }
 }

@@ -168,7 +168,8 @@ test("visuals chart governed metrics; raw columns are marked", async ({ page }) 
   await settled(page);
   const net = page.getByRole("region", { name: "Net revenue", exact: true });
   const orders = page.getByRole("region", { name: "Orders", exact: true });
-  await expect(orders.getByText("Not governed")).toBeVisible();
+  // On a small KPI card the marker is an icon; its words are for screen readers.
+  await expect(orders.getByText("Not governed")).toBeAttached();
   await expect(net.getByText("Not governed")).toHaveCount(0);
   await expect(net.getByText("Unapproved logic")).toHaveCount(0);
 

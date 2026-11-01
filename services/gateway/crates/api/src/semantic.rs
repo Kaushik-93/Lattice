@@ -71,6 +71,8 @@ pub fn prepare(
 ) -> Result<Prepared, QueryFailure> {
     let started = Instant::now();
     let invalid = |m: String| QueryFailure::new("invalid_query", m);
+    // A comparison measures the earlier period as it was then.
+    let today = visual.shift.and_then(|s| s.back(today)).unwrap_or(today);
     let model = &loaded.model;
     let q = &visual.query;
     let grain = model

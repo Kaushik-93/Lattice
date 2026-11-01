@@ -9,7 +9,7 @@
 
 mod compile;
 
-pub use compile::{QueryPart, VisualError, VisualQuery, compile};
+pub use compile::{QueryPart, Shift, VisualError, VisualQuery, compile};
 
 use lattice_planner::{Dimension, Filter, Measure, Scalar, SortDir};
 use serde::{Deserialize, Serialize};
