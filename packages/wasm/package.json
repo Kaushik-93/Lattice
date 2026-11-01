@@ -1,0 +1,11 @@
+{
+  "name": "@lattice/wasm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rust compiled to WebAssembly for the web app's compute worker. Rebuild with scripts/build-wasm.sh.",
+  "type": "module",
+  "types": "./pkg/lattice_wasm.d.ts",
+  "exports": {
+    ".": "./pkg/lattice_wasm.js"
+  }
+}

@@ -1,0 +1,27 @@
+[package]
+name = "lattice-wasm"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+description = "Client-side compute for the Lattice web app: LTTB downsampling, a point index for hover and brushing, histogram bins."
+
+[lib]
+# cdylib for the browser; rlib so the algorithms are tested natively with `cargo test`.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.129"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
