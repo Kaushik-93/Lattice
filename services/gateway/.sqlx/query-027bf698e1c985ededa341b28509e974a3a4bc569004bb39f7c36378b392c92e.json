@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.id, p.name, p.description, p.color, p.updated_at,\n                  me.role AS my_role,\n                  (p.created_by IS NOT DISTINCT FROM $2) AS \"owned_by_me!\",\n                  (SELECT count(*) FROM project_members m WHERE m.project_id = p.id) AS \"member_count!\",\n                  (SELECT count(*) FROM sources s WHERE s.project_id = p.id) AS \"source_count!\",\n                  ARRAY(SELECT u.display_name FROM project_members m JOIN users u ON u.id = m.user_id\n                        WHERE m.project_id = p.id ORDER BY m.created_at LIMIT 3) AS \"member_names!\"\n           FROM projects p\n           JOIN project_members me ON me.project_id = p.id AND me.user_id = $2\n           WHERE p.workspace_id = $1\n           ORDER BY p.updated_at DESC",
+  "query": "SELECT p.id, p.name, p.description, p.color, p.updated_at,\n                  me.role AS my_role,\n                  (p.created_by IS NOT DISTINCT FROM $2) AS \"owned_by_me!\",\n                  (SELECT count(*) FROM project_members m WHERE m.project_id = p.id) AS \"member_count!\",\n                  (SELECT count(*) FROM sources s WHERE s.project_id = p.id) AS \"source_count!\",\n                  (SELECT count(*) FROM sheets sh WHERE sh.project_id = p.id) AS \"sheet_count!\",\n                  ARRAY(SELECT u.display_name FROM project_members m JOIN users u ON u.id = m.user_id\n                        WHERE m.project_id = p.id ORDER BY m.created_at LIMIT 3) AS \"member_names!\"\n           FROM projects p\n           JOIN project_members me ON me.project_id = p.id AND me.user_id = $2\n           WHERE p.workspace_id = $1\n           ORDER BY p.updated_at DESC",
   "describe": {
     "columns": [
       {
@@ -50,6 +50,11 @@
       },
       {
         "ordinal": 9,
+        "name": "sheet_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
         "name": "member_names!",
         "type_info": "TextArray"
       }
@@ -70,8 +75,9 @@
       null,
       null,
       null,
+      null,
       null
     ]
   },
-  "hash": "7ea75e4ffd4f0202ae0c860d77e3b795cc871b22e7a8354696644a6746eeb40d"
+  "hash": "027bf698e1c985ededa341b28509e974a3a4bc569004bb39f7c36378b392c92e"
 }

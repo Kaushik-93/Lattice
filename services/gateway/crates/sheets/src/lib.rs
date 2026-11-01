@@ -95,6 +95,11 @@ pub struct SheetFilterDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub value: Option<FilterValue>,
+    /// The values a picker offers, saved with the sheet so link viewers (who can't run
+    /// queries of their own) can choose among them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Scalar>>")]
+    pub options: Vec<Scalar>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -234,6 +239,9 @@ pub fn validate(save: &SaveSheet) -> Result<(), SheetError> {
     for f in &save.filters {
         if f.label.trim().is_empty() || f.label.chars().count() > 60 {
             return invalid("A filter label has 1–60 characters.".into());
+        }
+        if f.options.len() > 200 {
+            return invalid("A filter offers at most 200 values.".into());
         }
         let ok = match (&f.kind, &f.value) {
             (_, None) => true,
@@ -715,6 +723,7 @@ mod tests {
             column: "order_date".into(),
             label: "Fiscal Q3".into(),
             kind: SheetFilterKind::DateRange,
+            options: vec![],
             value: Some(FilterValue::Many(vec![
                 Scalar::Text("2026-08-01".into()),
                 Scalar::Text("2026-10-31".into()),

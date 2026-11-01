@@ -71,6 +71,11 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/oidc/{provider}/callback", get(oidc::callback))
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/{id}", get(projects::get))
+        .route("/projects/{id}/members", post(projects::add_member))
+        .route(
+            "/projects/{id}/members/{user_id}",
+            axum::routing::patch(projects::update_member).delete(projects::remove_member),
+        )
         .route(
             "/projects/{id}/sources",
             get(source_routes::list).post(source_routes::create_database),

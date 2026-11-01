@@ -82,9 +82,11 @@ pub fn shared_context(sheet: &Sheet, ctx: SheetContext) -> Result<SheetContext, 
                     .iter()
                     .chain(v.spec.series.iter())
                     .chain(v.spec.drill.iter())
-                    .any(|d| d.column == s.filter.column && d.bin.is_none())
+                    .any(|d| d.column == s.filter.column)
         });
-        if !dimension || !matches!(s.filter.op, FilterOp::Eq | FilterOp::In) {
+        // Eq/In pick categories; Between picks a time bucket or a histogram bin.
+        let op = matches!(s.filter.op, FilterOp::Eq | FilterOp::In | FilterOp::Between);
+        if !dimension || !op {
             return Err(format!("can't select on {:?} here", s.filter.column));
         }
     }
@@ -133,6 +135,7 @@ mod tests {
                 label: "Region".into(),
                 kind: SheetFilterKind::Values,
                 value: None,
+                options: vec![],
             }],
             visuals: vec![Visual {
                 id: Uuid::from_u128(1),

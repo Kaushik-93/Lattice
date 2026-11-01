@@ -589,3 +589,114 @@ async fn every_demo_sheet_visual_runs(pool: PgPool) {
     ];
     assert_eq!(kinds, expected.iter().map(|k| (*k).to_owned()).collect());
 }
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn project_admins_manage_members(pool: PgPool) {
+    let h = harness(pool.clone()).await;
+    let owner = signup(&h.app, "ana@acme.example").await;
+    let project = create_project(&h.app, &owner).await;
+    // Priya has an account in the workspace but no role in the project yet.
+    signup(&h.app, "priya@acme.example").await;
+    let workspace = sqlx::query_scalar!("SELECT workspace_id FROM projects WHERE id = $1", project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let priya = sqlx::query_scalar!("SELECT id FROM users WHERE email = 'priya@acme.example'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query!(
+        "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
+        workspace,
+        priya
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let ana = sqlx::query_scalar!("SELECT id FROM users WHERE email = 'ana@acme.example'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let members = format!("/api/projects/{project}/members");
+
+    let added = json_call(
+        &h.app,
+        "POST",
+        &members,
+        Some(&owner),
+        Some(json!({ "email": "Priya@acme.example", "role": "editor" })),
+    )
+    .await;
+    assert_eq!(added.status, StatusCode::OK, "{:?}", added.body);
+    let roles: Vec<(String, String)> = added.body["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            (
+                m["email"].as_str().unwrap().to_owned(),
+                m["role"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert!(
+        roles.contains(&("priya@acme.example".into(), "editor".into())),
+        "{roles:?}"
+    );
+
+    let outsider = json_call(
+        &h.app,
+        "POST",
+        &members,
+        Some(&owner),
+        Some(json!({ "email": "nobody@else.example", "role": "viewer" })),
+    )
+    .await;
+    assert_eq!(outsider.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let promote = json_call(
+        &h.app,
+        "PATCH",
+        &format!("{members}/{priya}"),
+        Some(&owner),
+        Some(json!({ "role": "admin" })),
+    )
+    .await;
+    assert_eq!(promote.status, StatusCode::OK);
+    // The owner always stays an admin and can't be removed.
+    let demote_owner = json_call(
+        &h.app,
+        "PATCH",
+        &format!("{members}/{ana}"),
+        Some(&owner),
+        Some(json!({ "role": "viewer" })),
+    )
+    .await;
+    assert_eq!(demote_owner.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let remove_owner = json_call(
+        &h.app,
+        "DELETE",
+        &format!("{members}/{ana}"),
+        Some(&owner),
+        None,
+    )
+    .await;
+    assert_eq!(remove_owner.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let removed = json_call(
+        &h.app,
+        "DELETE",
+        &format!("{members}/{priya}"),
+        Some(&owner),
+        None,
+    )
+    .await;
+    assert_eq!(removed.status, StatusCode::OK);
+    assert_eq!(removed.body["members"].as_array().unwrap().len(), 1);
+    let audit =
+        sqlx::query_scalar!("SELECT count(*) FROM audit_log WHERE action LIKE 'project.member.%'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, Some(3));
+}

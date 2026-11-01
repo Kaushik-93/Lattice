@@ -144,8 +144,10 @@ async fn seed_demo_sheets(state: &AppState, seed: &DemoSeed, orders: Uuid) -> Re
         "id": Uuid::new_v4(), "column": "order_date", "label": "Fiscal Q3 · Aug–Oct",
         "kind": "date_range", "value": ["2026-08-01", "2026-10-31"]
     });
-    let regions =
-        json!({ "id": Uuid::new_v4(), "column": "region", "label": "Region", "kind": "values" });
+    let regions = json!({
+        "id": Uuid::new_v4(), "column": "region", "label": "Region", "kind": "values",
+        "options": ["AMER", "EMEA", "APAC"]
+    });
     let sum = json!({ "column": "amount", "agg": "sum" });
     let dim = |column: &str| json!({ "column": column, "bucket": null });
     let kpi = |title: &str, measure: Value, format: &str| {

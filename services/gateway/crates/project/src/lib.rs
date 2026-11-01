@@ -86,6 +86,7 @@ pub async fn list_for_user(
                   (p.created_by IS NOT DISTINCT FROM $2) AS "owned_by_me!",
                   (SELECT count(*) FROM project_members m WHERE m.project_id = p.id) AS "member_count!",
                   (SELECT count(*) FROM sources s WHERE s.project_id = p.id) AS "source_count!",
+                  (SELECT count(*) FROM sheets sh WHERE sh.project_id = p.id) AS "sheet_count!",
                   ARRAY(SELECT u.display_name FROM project_members m JOIN users u ON u.id = m.user_id
                         WHERE m.project_id = p.id ORDER BY m.created_at LIMIT 3) AS "member_names!"
            FROM projects p
@@ -111,7 +112,7 @@ pub async fn list_for_user(
                 member_count: r.member_count,
                 member_initials: r.member_names.iter().map(|n| initials(n)).collect(),
                 source_count: r.source_count,
-                sheet_count: 0,
+                sheet_count: r.sheet_count,
                 definition_count: 0,
             })
         })
@@ -185,6 +186,38 @@ pub async fn add_member(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+pub async fn remove_member(
+    pool: &PgPool,
+    project_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool, ProjectError> {
+    let done = sqlx::query!(
+        "DELETE FROM project_members WHERE project_id = $1 AND user_id = $2",
+        project_id,
+        user_id
+    )
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Who created the project (its "Owner", who always stays an admin), and how many admins it has.
+pub async fn owner_and_admins(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> Result<(Option<Uuid>, i64), ProjectError> {
+    let row = sqlx::query!(
+        r#"SELECT p.created_by,
+                  (SELECT count(*) FROM project_members m
+                   WHERE m.project_id = p.id AND m.role = 'admin') AS "admins!"
+           FROM projects p WHERE p.id = $1"#,
+        project_id
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok((row.created_by, row.admins))
 }
 
 /// The caller's role in a project, scoped to their workspace. `None` means no access,

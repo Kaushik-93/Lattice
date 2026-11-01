@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use lattice_project::ProjectSummary;
-use lattice_security::{Principal, WorkspaceRole};
+use lattice_security::{Principal, ProjectRole, WorkspaceRole};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
@@ -108,6 +108,20 @@ pub struct AuthProvidersResponse {
 #[ts(export)]
 pub struct ProjectListResponse {
     pub projects: Vec<ProjectSummary>,
+}
+
+/// Gives someone in the workspace a role in the project (design screen 07).
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct AddProjectMemberRequest {
+    pub email: String,
+    pub role: ProjectRole,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateProjectMemberRequest {
+    pub role: ProjectRole,
 }
 
 #[derive(Debug, Deserialize, TS)]
