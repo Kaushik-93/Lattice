@@ -5,4 +5,9 @@ export type Dimension = { column: string,
 /**
  * Truncate a date/timestamp column to this grain.
  */
-bucket: TimeBucket | null, };
+bucket: TimeBucket | null, 
+/**
+ * Group a numeric column into bins of this width (histograms). Each row is labelled with
+ * its bin's lower bound.
+ */
+bin?: number, };

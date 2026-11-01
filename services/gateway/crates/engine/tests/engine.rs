@@ -86,6 +86,26 @@ async fn loads_a_csv_extract_and_answers_compiled_queries() {
     assert_eq!(out.rows, 2, "January and February");
     let ipc = lattice_engine::ipc::encode(&out.schema, &out.batches).unwrap();
     assert!(ipc.len() > 100);
+
+    // Histogram bins (a DOUBLE literal width; the amounts fall in bins 0, 5 and 10) and
+    // projected raw points run in DuckDB too.
+    for (json, rows) in [
+        (
+            r#""dimensions":[{"column":"amount","bin":5.0}],"measures":[{"agg":"count"}]"#,
+            3,
+        ),
+        (r#""columns":["order_date","amount"],"limit":2000000"#, 4),
+    ] {
+        let query: TableQuery =
+            serde_json::from_str(&format!(r#"{{"table_id":"{}",{json}}}"#, Uuid::new_v4()))
+                .unwrap();
+        let compiled = compile(&query, &schema).unwrap();
+        let out = db
+            .query(compiled.sql, compiled.params, &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(out.rows, rows, "{json}");
+    }
 }
 
 #[tokio::test]

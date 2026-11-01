@@ -114,6 +114,31 @@ fn raw_rows_page_with_offset() {
 }
 
 #[test]
+fn raw_points_project_columns_and_allow_a_million_rows() {
+    // A scatter plot: three columns, deduplicated, up to MAX_POINTS rows.
+    insta::assert_snapshot!(render(json!({
+        "columns": ["order_date", "amount", "region", "amount"],
+        "filters": [{ "column": "store", "op": "lt", "value": 10 }],
+        "limit": 5000000
+    })));
+}
+
+#[test]
+fn wide_raw_queries_keep_the_row_cap() {
+    let five = json!({ "columns": ["order_date", "region", "category", "store", "amount"], "limit": 5000000 });
+    let c = compile(&query(five), &orders()).expect("compiles");
+    assert_eq!(c.row_limit, lattice_planner::MAX_ROWS);
+}
+
+#[test]
+fn numeric_bins_for_histograms() {
+    insta::assert_snapshot!(render(json!({
+        "dimensions": [{ "column": "amount", "bin": 25.0 }],
+        "measures": [{ "agg": "count" }]
+    })));
+}
+
+#[test]
 fn hostile_input_stays_inside_quotes_and_parameters() {
     insta::assert_snapshot!(render(json!({
         "dimensions": [{ "column": "we\"ird name" }],
@@ -170,5 +195,27 @@ fn rejects_invalid_queries() {
             json!({ "measures": [{ "agg": "count" }], "filters": [{ "column": "region", "op": "in", "value": [] }] })
         ),
         PlanError::InvalidFilter { .. }
+    ));
+    assert_eq!(
+        error(json!({ "columns": ["amount", "nope"] })),
+        PlanError::UnknownColumn("nope".into())
+    );
+    assert!(matches!(
+        error(
+            json!({ "dimensions": [{ "column": "region", "bin": 10.0 }], "measures": [{ "agg": "count" }] })
+        ),
+        PlanError::NotNumeric { agg: "bin", .. }
+    ));
+    for width in [0.0, -5.0, 1e300] {
+        assert!(matches!(
+            error(
+                json!({ "dimensions": [{ "column": "amount", "bin": width }], "measures": [{ "agg": "count" }] })
+            ),
+            PlanError::InvalidBin { .. }
+        ));
+    }
+    assert!(matches!(
+        error(json!({ "dimensions": [{ "column": "order_date", "bucket": "month", "bin": 1.0 }] })),
+        PlanError::InvalidBin { .. }
     ));
 }

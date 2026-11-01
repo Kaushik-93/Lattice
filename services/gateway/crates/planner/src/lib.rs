@@ -16,6 +16,10 @@ use uuid::Uuid;
 
 /// Hard cap on rows returned to a browser (spec §3: cap points per series).
 pub const MAX_ROWS: u32 = 100_000;
+/// Cap for raw point queries that project at most [`MAX_POINT_COLUMNS`] columns (a scatter
+/// plot's x, y, colour, size). The browser draws these with WebGL, not as table rows.
+pub const MAX_POINTS: u32 = 1_000_000;
+pub const MAX_POINT_COLUMNS: usize = 4;
 /// Rows returned when a query doesn't ask for a limit.
 pub const DEFAULT_ROWS: u32 = 10_000;
 
@@ -25,6 +29,10 @@ pub const DEFAULT_ROWS: u32 = 10_000;
 #[ts(export)]
 pub struct TableQuery {
     pub table_id: Uuid,
+    /// Raw-row queries only: the columns to return, in order (every column when empty).
+    #[serde(default)]
+    #[ts(optional, as = "Option<Vec<String>>")]
+    pub columns: Vec<String>,
     #[serde(default)]
     pub dimensions: Vec<Dimension>,
     #[serde(default)]
@@ -46,6 +54,11 @@ pub struct Dimension {
     /// Truncate a date/timestamp column to this grain.
     #[serde(default)]
     pub bucket: Option<TimeBucket>,
+    /// Group a numeric column into bins of this width (histograms). Each row is labelled with
+    /// its bin's lower bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub bin: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -173,6 +186,11 @@ pub enum PlanError {
     },
     #[error("time buckets need a date or timestamp column, but {column:?} is {data_type}")]
     NotTemporal { column: String, data_type: String },
+    #[error("invalid bins on {column:?}: {reason}")]
+    InvalidBin {
+        column: String,
+        reason: &'static str,
+    },
     #[error("{0} needs a column")]
     MissingColumn(&'static str),
     #[error("invalid filter on {column:?}: {reason}")]

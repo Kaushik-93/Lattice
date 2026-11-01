@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"columns\": [\"order_date\", \"amount\", \"region\", \"amount\"], \"filters\":\n    [{ \"column\": \"store\", \"op\": \"lt\", \"value\": 10 }], \"limit\": 5000000\n}))"
+---
+SELECT "order_date", "amount", "region" FROM "project"."s_demo"."orders" WHERE "store" < ? LIMIT 1000001
+-- params: [BigInt(10)]
+-- columns: order_date:Column, amount:Column, region:Column
+-- row_limit: 1000000

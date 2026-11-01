@@ -3,9 +3,13 @@ use ts_rs::TS;
 
 use crate::sql::{TypeClass, ident};
 use crate::{
-    Aggregation, ColumnInfo, DEFAULT_ROWS, Dimension, Filter, FilterOp, FilterValue, MAX_ROWS,
-    Measure, PlanError, Scalar, SortDir, TableQuery, TableSchema, TimeBucket,
+    Aggregation, ColumnInfo, DEFAULT_ROWS, Dimension, Filter, FilterOp, FilterValue,
+    MAX_POINT_COLUMNS, MAX_POINTS, MAX_ROWS, Measure, PlanError, Scalar, SortDir, TableQuery,
+    TableSchema, TimeBucket,
 };
+
+/// Bin widths outside this range are refused (they would be noise or overflow).
+const BIN_WIDTH: std::ops::RangeInclusive<f64> = 1e-9..=1e15;
 
 /// A value bound to a `?` placeholder, in order.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,7 +50,10 @@ pub fn compile(query: &TableQuery, table: &TableSchema) -> Result<CompiledQuery,
         table,
         params: Vec::new(),
     };
-    let row_limit = query.limit.unwrap_or(DEFAULT_ROWS).clamp(1, MAX_ROWS);
+    let raw = query.dimensions.is_empty() && query.measures.is_empty();
+    let points = raw && !query.columns.is_empty() && query.columns.len() <= MAX_POINT_COLUMNS;
+    let cap = if points { MAX_POINTS } else { MAX_ROWS };
+    let row_limit = query.limit.unwrap_or(DEFAULT_ROWS).clamp(1, cap);
     let filters = query
         .filters
         .iter()
@@ -58,8 +65,8 @@ pub fn compile(query: &TableQuery, table: &TableSchema) -> Result<CompiledQuery,
         format!(" WHERE {}", filters.join(" AND "))
     };
 
-    let (select, columns) = if query.dimensions.is_empty() && query.measures.is_empty() {
-        raw_select(&ctx, &where_sql)
+    let (select, columns) = if raw {
+        raw_select(&ctx, &query.columns, &where_sql)?
     } else {
         ctx.aggregate_select(&query.dimensions, &query.measures, &where_sql)?
     };
@@ -110,17 +117,28 @@ impl Ctx<'_> {
                     data_type: info.data_type.clone(),
                 });
             }
-            let alias = names.unique(&match d.bucket {
-                Some(b) => format!("{}_{}", info.name, bucket_name(b)),
-                None => info.name.clone(),
+            let bin = d
+                .bin
+                .map(|w| bin_width(info, class, d.bucket, w))
+                .transpose()?;
+            let alias = names.unique(&match (d.bucket, bin) {
+                (Some(b), _) => format!("{}_{}", info.name, bucket_name(b)),
+                (None, Some(_)) => format!("{}_bin", info.name),
+                (None, None) => info.name.clone(),
             });
-            dims.push(dimension_parts(
-                i,
-                &ident(&info.name),
-                class,
-                d.bucket,
-                &alias,
-            ));
+            let c = ident(&info.name);
+            dims.push(match bin {
+                // `{:e}` renders a finite float as a DOUBLE literal (e.g. `2.5e1`): no
+                // parameter, so GROUP BY ALL sees one expression.
+                Some(w) => dimension_parts(
+                    i,
+                    &format!("floor({c} / {w:e}) * {w:e}"),
+                    class,
+                    None,
+                    &alias,
+                ),
+                None => dimension_parts(i, &c, class, d.bucket, &alias),
+            });
             columns.push(OutputColumn {
                 name: alias,
                 role: ColumnRole::Dimension,
@@ -298,27 +316,64 @@ impl Ctx<'_> {
     }
 }
 
-fn raw_select(ctx: &Ctx<'_>, where_sql: &str) -> (String, Vec<OutputColumn>) {
-    let columns: Vec<OutputColumn> = ctx
-        .table
-        .columns
+fn raw_select(
+    ctx: &Ctx<'_>,
+    projection: &[String],
+    where_sql: &str,
+) -> Result<(String, Vec<OutputColumn>), PlanError> {
+    let mut names: Vec<&str> = Vec::new();
+    if projection.is_empty() {
+        names.extend(ctx.table.columns.iter().map(|c| c.name.as_str()));
+    } else {
+        for name in projection {
+            let (info, _) = ctx.column(name)?;
+            if !names.contains(&info.name.as_str()) {
+                names.push(&info.name);
+            }
+        }
+    }
+    let list = names
         .iter()
-        .map(|c| OutputColumn {
-            name: c.name.clone(),
+        .map(|n| ident(n))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let columns = names
+        .into_iter()
+        .map(|n| OutputColumn {
+            name: n.to_owned(),
             role: ColumnRole::Column,
         })
         .collect();
-    let list = ctx
-        .table
-        .columns
-        .iter()
-        .map(|c| ident(&c.name))
-        .collect::<Vec<_>>()
-        .join(", ");
-    (
+    Ok((
         format!("SELECT {list} FROM {}{where_sql}", ctx.table.reference),
         columns,
-    )
+    ))
+}
+
+fn bin_width(
+    info: &ColumnInfo,
+    class: TypeClass,
+    bucket: Option<TimeBucket>,
+    width: f64,
+) -> Result<f64, PlanError> {
+    let invalid = |reason| PlanError::InvalidBin {
+        column: info.name.clone(),
+        reason,
+    };
+    if bucket.is_some() {
+        return Err(invalid("a dimension takes a time bucket or bins, not both"));
+    }
+    if !class.is_numeric() {
+        return Err(PlanError::NotNumeric {
+            agg: "bin",
+            column: info.name.clone(),
+            data_type: info.data_type.clone(),
+        });
+    }
+    if !BIN_WIDTH.contains(&width) {
+        return Err(invalid("the width must be a positive number"));
+    }
+    Ok(width)
 }
 
 fn order_by(query: &TableQuery, columns: &[OutputColumn]) -> Result<String, PlanError> {

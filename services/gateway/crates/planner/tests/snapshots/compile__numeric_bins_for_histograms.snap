@@ -1,0 +1,8 @@
+---
+source: crates/planner/tests/compile.rs
+expression: "render(json!({\n    \"dimensions\": [{ \"column\": \"amount\", \"bin\": 25.0 }], \"measures\":\n    [{ \"agg\": \"count\" }]\n}))"
+---
+SELECT floor("amount" / 2.5e1) * 2.5e1 AS "amount_bin", count(*) AS "count" FROM "project"."s_demo"."orders" GROUP BY ALL ORDER BY "amount_bin" ASC NULLS LAST LIMIT 10001
+-- params: []
+-- columns: amount_bin:Dimension, count:Measure
+-- row_limit: 10000
