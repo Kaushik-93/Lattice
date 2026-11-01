@@ -30,7 +30,16 @@ export function ExampleCases({ note }: { note: NoteDetail }) {
   return (
     <section aria-label="Example cases" className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-semibold">Example cases</span>
+        <span className="text-[13px] font-semibold">
+          Example cases
+          {note.open && note.live && (
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              · version {note.open.version},{" "}
+              {note.open.status === "pending" ? "in review" : "draft"}
+            </span>
+          )}
+        </span>
         {cases.length > 0 && (
           <button
             type="button"
