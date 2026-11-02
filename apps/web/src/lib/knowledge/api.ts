@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AcceptedSuggestion,
   CaseRunResponse,
   ImpactResponse,
   KnowledgeGraph,
@@ -10,6 +11,7 @@ import type {
   NoteEdit,
   ProjectModelResponse,
   QueueResponse,
+  SuggestionsResponse,
   WorkspaceMembersResponse,
 } from "@lattice/shared-types";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
@@ -25,6 +27,7 @@ export const knowledgeKeys = {
   model: (project: string) => ["knowledge", "model", project] as const,
   cases: (id: string, version: number) => ["knowledge", "cases", id, version] as const,
   impact: (id: string) => ["knowledge", "impact", id] as const,
+  suggestions: ["knowledge", "suggestions"] as const,
   members: ["workspace", "members"] as const,
 };
 
@@ -126,6 +129,41 @@ function changed(client: QueryClient, note: NoteDetail | null, id: string) {
   void client.invalidateQueries({ queryKey: ["knowledge", "model"] });
   void client.invalidateQueries({ queryKey: ["knowledge", "cases"] });
   void client.invalidateQueries({ queryKey: ["knowledge", "impact"] });
+  void client.invalidateQueries({ queryKey: knowledgeKeys.suggestions });
+}
+
+/** Knowledge picked up from data profiles, in the projects the viewer can edit. */
+export function useSuggestions() {
+  return useQuery({
+    queryKey: knowledgeKeys.suggestions,
+    queryFn: ({ signal }) => api<SuggestionsResponse>("/api/knowledge/suggestions", { signal }),
+    select: (data) => data.projects,
+    retry: noRetryOn4xx,
+  });
+}
+
+/** Accepts (into a draft) or dismisses a suggestion. */
+export function useSuggestionAction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      project,
+      key,
+      accept,
+    }: {
+      project: string;
+      key: string;
+      accept: boolean;
+    }): Promise<AcceptedSuggestion | null> => {
+      const path = `/api/projects/${encodeURIComponent(project)}/suggestions/${accept ? "accept" : "dismiss"}`;
+      if (accept) return api<AcceptedSuggestion>(path, { method: "POST", body: { key } });
+      await api<unknown>(path, { method: "POST", body: { key } });
+      return null;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["knowledge"] });
+    },
+  });
 }
 
 export function useCreateNote() {

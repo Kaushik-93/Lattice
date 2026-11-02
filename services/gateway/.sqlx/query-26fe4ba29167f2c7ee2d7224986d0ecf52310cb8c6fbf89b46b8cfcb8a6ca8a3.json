@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.id, t.table_name, t.row_count, s.name AS source_name,\n                  c.name AS \"column_name?\", c.data_type AS \"data_type?\", c.profile AS \"profile?\"\n           FROM source_tables t\n           JOIN sources s ON s.id = t.source_id\n           LEFT JOIN source_columns c ON c.table_id = t.id\n           WHERE s.project_id = $1\n           ORDER BY s.created_at, t.table_name, t.id, c.ordinal",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "table_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "row_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "source_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "column_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "data_type?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "profile?",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "26fe4ba29167f2c7ee2d7224986d0ecf52310cb8c6fbf89b46b8cfcb8a6ca8a3"
+}

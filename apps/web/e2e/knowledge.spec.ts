@@ -130,3 +130,28 @@ test("a link to an unwritten note offers to create it", async ({ page }) => {
 async function noteId(page: Page): Promise<string> {
   return new URL(page.url()).searchParams.get("note") ?? "";
 }
+
+test("profiles of connected tables suggest knowledge, with their evidence", async ({ page }) => {
+  await signInDemo(page);
+  // Profile the demo's orders, as a person would after connecting it.
+  const gateway = process.env.GATEWAY_URL ?? "http://localhost:8080";
+  const headers = { origin: "http://localhost:3000" };
+  const projects = await (await page.request.get(`${gateway}/api/projects`, { headers })).json();
+  const project = projects.projects.find((p: { name: string }) => p.name === "Revenue Analytics");
+  const model = await (
+    await page.request.get(`${gateway}/api/projects/${project.id}/model`, { headers })
+  ).json();
+  const orders = model.entities.find((e: { title: string }) => e.title === "Order").table.table_id;
+  await page.request.post(`${gateway}/api/projects/${project.id}/tables/${orders}/profile`, {
+    headers,
+  });
+
+  await openLogic(page);
+  const section = page.getByRole("region", { name: /Picked up from your data/ });
+  await expect(section).toBeVisible();
+  const channel = section.getByRole("listitem", { name: "Dimension: Channel" });
+  await expect(channel).toContainText(/values, e\.g\./);
+  await expect(channel.getByRole("button", { name: "Accept" })).toBeVisible();
+  // What the graph already has isn't suggested again.
+  await expect(section.getByRole("listitem", { name: "Dimension: Region" })).toHaveCount(0);
+});

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO entity_bindings (project_id, note_id, table_id, bound_by)\n             VALUES ($1, $2, $3, $4) ON CONFLICT (project_id, note_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7eee264241ad34b2513dcb50226a12a02536d81f8992bbb93501a0b17b3d0316"
+}

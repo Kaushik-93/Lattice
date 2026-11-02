@@ -544,3 +544,31 @@ pub struct ImpactResponse {
     /// Affected visuals in projects the viewer can't open.
     pub hidden_visuals: u32,
 }
+
+/// Knowledge suggested from data profiles, for one project (docs/adr/0006).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ProjectSuggestions {
+    pub project_id: Uuid,
+    pub project_name: String,
+    pub items: Vec<lattice_knowledge::capture::Suggestion>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct SuggestionsResponse {
+    /// Projects the viewer can edit that have open suggestions.
+    pub projects: Vec<ProjectSuggestions>,
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct SuggestionRequest {
+    pub key: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct AcceptedSuggestion {
+    pub note_id: Uuid,
+}

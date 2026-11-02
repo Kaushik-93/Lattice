@@ -18,6 +18,7 @@ import { KnowledgeGraph } from "./knowledge-graph";
 import { NoteEditor, type EditorTarget } from "./note-editor";
 import { NotePanel } from "./note-panel";
 import { ReviewQueue } from "./review-queue";
+import { Suggestions } from "./suggestions";
 
 const LEGEND: { label: string; className: string }[] = [
   { label: "Entity", className: "rounded-[4px] border-[#8e97ad] bg-white" },
@@ -213,10 +214,13 @@ export function LogicView() {
       </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
-        <ReviewQueue
-          onOpen={setSelected}
-          onEdit={(id) => setEditor({ mode: "edit", noteId: id })}
-        />
+        <div className="flex flex-col gap-6">
+          <ReviewQueue
+            onOpen={setSelected}
+            onEdit={(id) => setEditor({ mode: "edit", noteId: id })}
+          />
+          <Suggestions onOpen={setSelected} />
+        </div>
         {editor ? (
           <NoteEditor
             target={editor}

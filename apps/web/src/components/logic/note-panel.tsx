@@ -17,7 +17,10 @@ function provenanceLabel(r: Revision): string {
   const source = (r.provenance as { source?: string }).source;
   if (source === "demo") return "Demo content";
   if (r.author === "ai") return "Proposed by the agent";
-  if (source === "profile") return "Found while profiling a source";
+  if (source === "profile") {
+    const table = (r.provenance as { table?: string }).table;
+    return table ? `Picked up from ${table}` : "Picked up from a source's profile";
+  }
   return r.author_name ? `Written by ${r.author_name}` : "Written by a person";
 }
 

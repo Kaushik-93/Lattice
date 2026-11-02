@@ -3,6 +3,7 @@
 //! a note's live content is its latest approved revision, so approved knowledge keeps serving
 //! while a change to it waits for review.
 
+pub mod capture;
 pub mod links;
 
 use std::collections::{HashMap, HashSet};
@@ -180,7 +181,7 @@ impl Viewer {
         }
     }
 
-    fn actor(&self) -> String {
+    pub fn actor(&self) -> String {
         format!("user:{}", self.user_id)
     }
 }

@@ -7,17 +7,20 @@ use lattice_knowledge::{
     self as knowledge, KnowledgeGraph, NewNote, NoteDetail, NoteEdit, Provenance, QueueItem,
     RevisionStatus, Viewer,
 };
-use lattice_security::Principal;
+use lattice_security::{Principal, ProjectRole};
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::auth::Authed;
+use crate::capture;
 use crate::dto::{
-    CaseRunResponse, DeprecateNoteRequest, ImpactResponse, QueueResponse, RejectNoteRequest,
-    RevertNoteRequest, SetOwnerRequest, WorkspaceMember, WorkspaceMembersResponse,
+    AcceptedSuggestion, CaseRunResponse, DeprecateNoteRequest, ImpactResponse, ProjectSuggestions,
+    QueueResponse, RejectNoteRequest, RevertNoteRequest, SetOwnerRequest, SuggestionRequest,
+    SuggestionsResponse, WorkspaceMember, WorkspaceMembersResponse,
 };
 use crate::error::ApiError;
 use crate::review;
+use crate::routes::projects::require_role;
 use crate::state::AppState;
 
 async fn viewer(state: &AppState, me: &Principal) -> Result<Viewer, ApiError> {
@@ -267,4 +270,52 @@ pub async fn workspace_members(
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(WorkspaceMembersResponse { members }))
+}
+
+/// Open suggestions in every project the viewer can edit.
+pub async fn suggestions(
+    State(state): State<AppState>,
+    Authed(me): Authed,
+) -> Result<Json<SuggestionsResponse>, ApiError> {
+    let viewer = viewer(&state, &me).await?;
+    let projects = lattice_project::list_for_user(&state.pool, me.workspace_id, me.user_id).await?;
+    let mut out = Vec::new();
+    for p in projects
+        .into_iter()
+        .filter(|p| p.my_role >= ProjectRole::Editor)
+    {
+        let items = capture::open(&state, &viewer, p.id).await?;
+        if !items.is_empty() {
+            out.push(ProjectSuggestions {
+                project_id: p.id,
+                project_name: p.name,
+                items,
+            });
+        }
+    }
+    Ok(Json(SuggestionsResponse { projects: out }))
+}
+
+pub async fn accept_suggestion(
+    State(state): State<AppState>,
+    Authed(me): Authed,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<SuggestionRequest>,
+) -> Result<Json<AcceptedSuggestion>, ApiError> {
+    require_role(&state, &me, project_id, ProjectRole::Editor).await?;
+    let viewer = viewer(&state, &me).await?;
+    let note_id = capture::accept(&state, &viewer, project_id, &req.key).await?;
+    Ok(Json(AcceptedSuggestion { note_id }))
+}
+
+pub async fn dismiss_suggestion(
+    State(state): State<AppState>,
+    Authed(me): Authed,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<SuggestionRequest>,
+) -> Result<StatusCode, ApiError> {
+    require_role(&state, &me, project_id, ProjectRole::Editor).await?;
+    let viewer = viewer(&state, &me).await?;
+    capture::dismiss(&state, &viewer, project_id, &req.key).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

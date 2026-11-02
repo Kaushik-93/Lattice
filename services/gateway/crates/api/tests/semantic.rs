@@ -864,3 +864,143 @@ async fn top_n_keeps_whole_categories(pool: PgPool) {
     });
     assert!(lattice_planner::compile(&bad, &schema).is_err());
 }
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn profiles_suggest_knowledge_to_accept_or_dismiss(pool: PgPool) {
+    let d = demo(pool).await;
+    // Profile the demo's tables, as a person would after connecting a source.
+    let sources = json_call(
+        &d.h.app,
+        "GET",
+        &format!("/api/projects/{}/sources", d.project),
+        Some(&d.cookie),
+        None,
+    )
+    .await
+    .body;
+    for s in sources["sources"].as_array().unwrap() {
+        let detail = json_call(
+            &d.h.app,
+            "GET",
+            &format!(
+                "/api/projects/{}/sources/{}",
+                d.project,
+                s["id"].as_str().unwrap()
+            ),
+            Some(&d.cookie),
+            None,
+        )
+        .await
+        .body;
+        for t in detail["tables"].as_array().unwrap() {
+            let path = format!(
+                "/api/projects/{}/tables/{}/profile",
+                d.project,
+                t["id"].as_str().unwrap()
+            );
+            let reply = json_call(&d.h.app, "POST", &path, Some(&d.cookie), None).await;
+            assert!(reply.status.is_success(), "{}", reply.body);
+        }
+    }
+    let list = || async {
+        json_call(
+            &d.h.app,
+            "GET",
+            "/api/knowledge/suggestions",
+            Some(&d.cookie),
+            None,
+        )
+        .await
+        .body
+    };
+    let body = list().await;
+    let projects = body["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 1, "only Revenue Analytics has data");
+    let items = projects[0]["items"].as_array().unwrap();
+    let titles: Vec<&str> = items.iter().map(|s| s["title"].as_str().unwrap()).collect();
+    // Order, Customer and Store are already entities connected to their tables, and their
+    // relationships and the Region / Product category dimensions exist: what's left is new.
+    for t in ["Channel", "Segment", "Store type"] {
+        assert!(titles.contains(&t), "{titles:?}");
+    }
+    for t in ["Order", "Customer", "Region", "Order to Customer"] {
+        assert!(!titles.contains(&t), "{titles:?}");
+    }
+    let find = |title: &str| items.iter().find(|s| s["title"] == title).unwrap().clone();
+    let channel = find("Channel");
+    assert_eq!(channel["kind"], "dimension");
+    assert_eq!(channel["definition"]["path"], "order.channel");
+    assert!(channel["evidence"][0].as_str().unwrap().contains("values"));
+
+    // Accepting makes a draft the model can use; dismissing hides it for good.
+    let accept = format!("/api/projects/{}/suggestions/accept", d.project);
+    let reply = json_call(
+        &d.h.app,
+        "POST",
+        &accept,
+        Some(&d.cookie),
+        Some(json!({ "key": channel["key"] })),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    let note = reply.body["note_id"].as_str().unwrap().to_owned();
+    let detail = json_call(
+        &d.h.app,
+        "GET",
+        &format!("/api/knowledge/notes/{note}"),
+        Some(&d.cookie),
+        None,
+    )
+    .await
+    .body;
+    assert_eq!(detail["state"], "draft");
+    assert_eq!(detail["open"]["provenance"]["source"], "profile");
+    let dismiss = format!("/api/projects/{}/suggestions/dismiss", d.project);
+    let segment = find("Segment");
+    let reply = json_call(
+        &d.h.app,
+        "POST",
+        &dismiss,
+        Some(&d.cookie),
+        Some(json!({ "key": segment["key"] })),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+
+    let after = list().await;
+    let titles: Vec<String> = after["projects"][0]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["title"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(!titles.contains(&"Channel".to_owned()) && !titles.contains(&"Segment".to_owned()));
+    let model = json_call(
+        &d.h.app,
+        "GET",
+        &format!("/api/projects/{}/model", d.project),
+        Some(&d.cookie),
+        None,
+    )
+    .await
+    .body;
+    let dim = model["dimensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["title"] == "Channel")
+        .unwrap()
+        .clone();
+    assert_eq!(dim["problem"], Value::Null);
+    assert_eq!(dim["standing"], "unapproved");
+    // A key that isn't open can't be accepted twice.
+    let again = json_call(
+        &d.h.app,
+        "POST",
+        &accept,
+        Some(&d.cookie),
+        Some(json!({ "key": channel["key"] })),
+    )
+    .await;
+    assert_eq!(again.status, StatusCode::NOT_FOUND);
+}

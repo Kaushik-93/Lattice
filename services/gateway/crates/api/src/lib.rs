@@ -2,6 +2,7 @@
 //! per-request timing breakdown.
 
 pub mod auth;
+pub mod capture;
 pub mod config;
 pub mod db;
 pub mod dto;
@@ -132,6 +133,15 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/knowledge/graph", get(knowledge_routes::graph))
         .route("/knowledge/queue", get(knowledge_routes::queue))
+        .route("/knowledge/suggestions", get(knowledge_routes::suggestions))
+        .route(
+            "/projects/{id}/suggestions/accept",
+            post(knowledge_routes::accept_suggestion),
+        )
+        .route(
+            "/projects/{id}/suggestions/dismiss",
+            post(knowledge_routes::dismiss_suggestion),
+        )
         .route("/knowledge/notes", post(knowledge_routes::create))
         .route("/knowledge/notes/{id}", get(knowledge_routes::get))
         .route(

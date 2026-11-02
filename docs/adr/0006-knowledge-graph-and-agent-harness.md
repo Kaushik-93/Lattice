@@ -126,6 +126,17 @@ much larger scale). The extension stays installed.
    the conversation as evidence.
 4. People writing notes directly.
 
+### Capture from profiles and sheets (slice 3.3)
+
+Decided 2026-11-02: suggestions from a source's profiles wait in a **Suggestions** list
+("Picked up from your data") rather than entering the graph. They're worked out from the catalog
+whenever the list is opened, so they follow the data and the graph; only accept/dismiss
+decisions are stored. Accepting starts a draft (an accepted entity is also connected to its
+table); an entity the graph already has becomes a suggestion to connect it. **Promote to metric**
+is an action on every raw measure, suggested when the same raw aggregation appears on two or more
+visuals; it writes the formula into a draft metric, and the visuals switch to it at once, badged
+"Unapproved logic" until it's approved.
+
 ## Project creation → dashboards
 
 On project creation the gateway builds a **context pack**: entities matched to the project's
