@@ -259,7 +259,9 @@ test("sheet: switching to a prefetched sheet is under 100 ms", async ({ page }) 
   // Neighbours are prefetched after the first sheet settles; give that a moment.
   await page.waitForTimeout(1500);
   const switches: number[] = [];
-  for (const name of ["Regional ops", "Revenue Review", "Regional ops"]) {
+  // Seven switches, so one slow frame on a shared CI runner doesn't decide the median.
+  const sheets = ["Regional ops", "Revenue Review"];
+  for (const name of Array.from({ length: 7 }, (_, i) => sheets[i % 2]!)) {
     await page.getByRole("tab", { name: new RegExp(name) }).click();
     await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
     await expect
