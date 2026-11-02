@@ -21,13 +21,20 @@ import { useId, useState, type ReactNode } from "react";
 import { dataClient } from "@/lib/data/client";
 import { metricsFor, useProjectModel } from "@/lib/knowledge/api";
 import { measureLabel } from "@/lib/sheets/charts";
-import { placeField, type Field as FieldRef, type Slot } from "@/lib/sheets/fields";
+import {
+  placeField,
+  sameAggregation,
+  switchToMetric,
+  type Field as FieldRef,
+  type Slot,
+} from "@/lib/sheets/fields";
 import { PRESET_LABEL, presetRange } from "@/lib/sheets/fiscal";
 import { useProjectTables, type CatalogTable } from "@/lib/queries";
 import { newId, type SheetDoc } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
 
 import { DropSlot, FieldList, slotLabel } from "./field-list";
+import { Promote } from "./promote";
 import { FilterFields } from "./filter-fields";
 import { FormatFields, patchStyle } from "./format-fields";
 import { useSheetEnv, useSheetState } from "./sheet-env";
@@ -258,7 +265,8 @@ function VisualFields({
   tables: CatalogTable[];
   model: ProjectModelResponse | undefined;
 }) {
-  const { store } = useSheetEnv();
+  const { store, target } = useSheetEnv();
+  const projectId = target.kind === "member" ? target.projectId : null;
   const [tab, setTab] = useEditorTab();
   const spec = visual.spec;
   const table = tables.find((t) => t.id === spec.table_id);
@@ -558,6 +566,26 @@ function VisualFields({
                   columns={columns}
                   metrics={metrics}
                   onChange={(measures) => update("Change measures", (s) => ({ ...s, measures }))}
+                  promote={
+                    projectId
+                      ? (m) => (
+                          <Promote
+                            key={`${m.column}:${m.agg}`}
+                            projectId={projectId}
+                            tableId={spec.table_id}
+                            measure={m}
+                            uses={sameAggregation(store.getState().doc.visuals, spec.table_id, m)}
+                            onPromoted={(id) =>
+                              store
+                                .getState()
+                                .edit("Promote to metric", (doc) =>
+                                  switchToMetric(doc, spec.table_id, m, id),
+                                )
+                            }
+                          />
+                        )
+                      : undefined
+                  }
                 />
               </DropSlot>
             )}
@@ -788,12 +816,15 @@ function MeasuresField({
   columns,
   metrics,
   onChange,
+  promote,
 }: {
   measures: Measure[];
   single: boolean;
   columns: CatalogTable["columns"];
   metrics: ModelMetric[];
   onChange: (m: Measure[]) => void;
+  /** "Promote to metric" for a raw measure, when the sheet belongs to a project. */
+  promote?: (m: Measure) => ReactNode;
 }) {
   const set = (i: number, m: Measure) => onChange(measures.map((x, j) => (j === i ? m : x)));
   const governed = measures.some((m) => m.metric);
@@ -836,6 +867,7 @@ function MeasuresField({
             </select>
           )}
           {!m.metric && <RawMeasure m={m} columns={columns} onChange={(next) => set(i, next)} />}
+          {!m.metric && promote?.(m)}
           {measures.length > 1 && (
             <button
               type="button"

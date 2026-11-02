@@ -1,7 +1,14 @@
 import type { VisualSpec } from "@lattice/shared-types";
 import { describe, expect, it } from "vitest";
 
-import { accepts, placeField, slotsOf, type Field } from "./fields";
+import {
+  accepts,
+  placeField,
+  sameAggregation,
+  slotsOf,
+  switchToMetric,
+  type Field,
+} from "./fields";
 
 const spec = (patch: Partial<VisualSpec>): VisualSpec => ({
   kind: "column",
@@ -64,5 +71,35 @@ describe("placing fields on a visual", () => {
     // A single-value visual swaps its value.
     const kpi = placeField(spec({ kind: "kpi" }), "values", net);
     expect(placeField(kpi, "values", aov).measures.map((m) => m.metric)).toEqual(["aov"]);
+  });
+});
+
+describe("promoting a raw aggregation", () => {
+  const visual = (id: string, measures: VisualSpec["measures"], table = "orders") => ({
+    id,
+    spec: spec({ table_id: table, measures }),
+    layout: { x: 0, y: 0, w: 6, h: 4 },
+  });
+  const sum = { column: "amount", agg: "sum" as const };
+  const doc = {
+    name: "s",
+    visuals: [
+      visual("a", [sum]),
+      visual("b", [sum]),
+      visual("c", [sum, { column: null, agg: "count" as const }]),
+      visual("d", [sum], "stores"),
+    ],
+  };
+
+  it("counts the visuals aggregating the same way, and switches them to the metric", () => {
+    expect(sameAggregation(doc.visuals, "orders", sum)).toBe(3);
+    const next = switchToMetric(doc, "orders", sum, "m1");
+    expect(next.visuals.map((v) => v.spec.measures[0]?.metric ?? null)).toEqual([
+      "m1",
+      "m1",
+      null, // would mix a metric with a raw count
+      null, // another table
+    ]);
+    expect(next.name).toBe("s");
   });
 });

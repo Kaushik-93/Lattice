@@ -572,3 +572,20 @@ pub struct SuggestionRequest {
 pub struct AcceptedSuggestion {
     pub note_id: Uuid,
 }
+
+/// Turns a raw aggregation on a sheet into a governed metric (docs/adr/0006, slice 3.3).
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct PromoteRequest {
+    pub table_id: Uuid,
+    pub measure: lattice_planner::Measure,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct PromoteResponse {
+    /// The draft metric.
+    pub note_id: Uuid,
+    pub formula: String,
+}

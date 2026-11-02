@@ -448,3 +448,46 @@ test("conditional formatting, reference lines and KPI targets", async ({ page })
     await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
   }
 });
+
+test("a raw aggregation used twice is promoted to a draft metric", async ({ page }) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  await page.getByRole("button", { name: "Edit mode" }).click();
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  const editor = page.getByRole("complementary", { name: "Editor" });
+  let metricId = "";
+  try {
+    for (const title of ["First", "Second"]) {
+      await page.getByRole("button", { name: "Add visual" }).first().click();
+      await editor
+        .getByLabel("Table")
+        .selectOption({ label: "Acme Retail orders (demo) · orders" });
+      await editor.getByLabel("Title").fill(title);
+    }
+    // Both sum the same column: the drawer suggests a metric.
+    await expect(editor.getByText(/is on 2 visuals\. Make it a metric\?/)).toBeVisible();
+    await editor.getByRole("button", { name: "Promote", exact: true }).click();
+    await editor.getByLabel("Metric name").fill(`Units ${Date.now()}`);
+    await editor.getByRole("button", { name: "Create metric" }).click();
+
+    // Both visuals switch to the draft, marked as unapproved logic.
+    for (const title of ["First", "Second"]) {
+      await expect(
+        page.getByRole("region", { name: title, exact: true }).getByText("Unapproved logic"),
+      ).toBeAttached({ timeout: 15_000 });
+    }
+    metricId = await editor.getByLabel("Metric").inputValue();
+    expect(metricId).toMatch(/^[0-9a-f-]{36}$/);
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+    if (metricId) {
+      await page.request.post(
+        `${process.env.GATEWAY_URL ?? "http://localhost:8080"}/api/knowledge/notes/${metricId}/deprecate`,
+        { data: { deprecated: true }, headers: { origin: "http://localhost:3000" } },
+      );
+    }
+  }
+});

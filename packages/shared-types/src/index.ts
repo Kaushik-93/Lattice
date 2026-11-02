@@ -64,6 +64,8 @@ export type * from "./generated/ProjectModelResponse";
 export type * from "./generated/ProjectRole";
 export type * from "./generated/ProjectSuggestions";
 export type * from "./generated/ProjectSummary";
+export type * from "./generated/PromoteRequest";
+export type * from "./generated/PromoteResponse";
 export type * from "./generated/QueryTimings";
 export type * from "./generated/QueueItem";
 export type * from "./generated/QueueResponse";

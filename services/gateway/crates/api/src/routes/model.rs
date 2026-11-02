@@ -13,7 +13,8 @@ use uuid::Uuid;
 use crate::auth::Authed;
 use crate::dto::{
     BindEntityRequest, ModelDefinition, ModelDimension, ModelEntity, ModelMetric,
-    ModelRelationship, ModelRule, ModelTable, ProjectModelResponse,
+    ModelRelationship, ModelRule, ModelTable, ProjectModelResponse, PromoteRequest,
+    PromoteResponse,
 };
 use crate::error::ApiError;
 use crate::routes::projects::require_role;
@@ -230,4 +231,104 @@ fn describe(loaded: &LoadedModel) -> ProjectModelResponse {
             })
             .collect(),
     }
+}
+
+/// The expression-language formula for a raw aggregation over `entity`.
+pub fn formula_for(entity: &str, m: &lattice_planner::Measure) -> Result<String, ApiError> {
+    use lattice_planner::Aggregation as A;
+    let column = m
+        .column
+        .as_deref()
+        .map(|c| format!("{entity}.{}", c.to_lowercase()));
+    Ok(match (m.agg, column) {
+        (A::Count, None) => format!("COUNT({entity})"),
+        (A::Count, Some(c)) => format!("COUNT({c})"),
+        (A::Sum, Some(c)) => format!("SUM({c})"),
+        (A::Avg, Some(c)) => format!("AVG({c})"),
+        (A::Min, Some(c)) => format!("MIN({c})"),
+        (A::Max, Some(c)) => format!("MAX({c})"),
+        (A::CountDistinct | A::ApproxCountDistinct, Some(c)) => format!("COUNT DISTINCT({c})"),
+        (_, None) => {
+            return Err(ApiError::BadRequest(
+                "That aggregation needs a column.".into(),
+            ));
+        }
+    })
+}
+
+/// Promotes a raw aggregation to a draft metric over the table's entity. A table without one
+/// gets it first, from its profile suggestion.
+pub async fn promote(
+    State(state): State<AppState>,
+    Authed(me): Authed,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<PromoteRequest>,
+) -> Result<Json<PromoteResponse>, ApiError> {
+    require_role(&state, &me, project_id, ProjectRole::Editor).await?;
+    if req.measure.metric.is_some() {
+        return Err(ApiError::BadRequest("That's already a metric.".into()));
+    }
+    let viewer = knowledge_viewer(&state, &me).await?;
+    let bound = |loaded: &LoadedModel| {
+        loaded
+            .model
+            .entities
+            .iter()
+            .find(|e| e.table.as_ref().is_some_and(|t| t.table_id == req.table_id))
+            .map(|e| (e.ident.clone(), e.meta.title.clone()))
+    };
+    let mut entity = bound(&load(&state, me.workspace_id, project_id).await?);
+    if entity.is_none() {
+        let suggestion = crate::capture::open(&state, &viewer, project_id)
+            .await?
+            .into_iter()
+            .find(|s| {
+                s.table_id == req.table_id
+                    && matches!(
+                        s.kind,
+                        lattice_knowledge::capture::SuggestionKind::Entity
+                            | lattice_knowledge::capture::SuggestionKind::Binding
+                    )
+            })
+            .ok_or_else(|| {
+                ApiError::BadRequest(
+                    "Connect this table to an entity first, on the Business logic page.".into(),
+                )
+            })?;
+        crate::capture::accept(&state, &viewer, project_id, &suggestion.key).await?;
+        entity = bound(&load(&state, me.workspace_id, project_id).await?);
+    }
+    let (ident, title) = entity.ok_or(ApiError::NotFound)?;
+    let formula = formula_for(&ident, &req.measure)?;
+    let what = match req.measure.column.as_deref() {
+        Some(c) => format!("`{c}`"),
+        None => "rows".to_owned(),
+    };
+    let new = lattice_knowledge::NewNote {
+        kind: NoteKind::Metric,
+        title: req.title.trim().to_owned(),
+        body: format!("Aggregates {what} of each [[{title}]]. Promoted from a sheet."),
+        definition: Some(serde_json::json!({ "formula": formula })),
+        project_id: None,
+        owner_team: None,
+        submit: Some(false),
+    };
+    let provenance = lattice_knowledge::Provenance {
+        author: viewer.actor(),
+        value: serde_json::json!({ "source": "sheet", "table_id": req.table_id }),
+    };
+    let note_id = knowledge::create(&state.pool, &viewer, &new, provenance).await?;
+    Ok(Json(PromoteResponse { note_id, formula }))
+}
+
+async fn knowledge_viewer(
+    state: &AppState,
+    me: &Principal,
+) -> Result<lattice_knowledge::Viewer, ApiError> {
+    Ok(lattice_knowledge::Viewer {
+        user_id: me.user_id,
+        workspace_id: me.workspace_id,
+        workspace_role: me.workspace_role,
+        projects: lattice_project::roles_for_user(&state.pool, me.workspace_id, me.user_id).await?,
+    })
 }

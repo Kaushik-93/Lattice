@@ -127,6 +127,7 @@ pub fn router(state: AppState) -> Router {
             get(knowledge_routes::workspace_members),
         )
         .route("/projects/{id}/model", get(model_routes::get))
+        .route("/projects/{id}/promote", post(model_routes::promote))
         .route(
             "/projects/{id}/bindings/{note_id}",
             axum::routing::put(model_routes::bind).delete(model_routes::unbind),

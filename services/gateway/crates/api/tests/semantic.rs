@@ -1004,3 +1004,63 @@ async fn profiles_suggest_knowledge_to_accept_or_dismiss(pool: PgPool) {
     .await;
     assert_eq!(again.status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn raw_aggregations_promote_to_draft_metrics(pool: PgPool) {
+    let d = demo(pool).await;
+    let path = format!("/api/projects/{}/model", d.project);
+    let m = json_call(&d.h.app, "GET", &path, Some(&d.cookie), None)
+        .await
+        .body;
+    let orders = named(&m["entities"], "Order")["table"]["table_id"].clone();
+    let promote = format!("/api/projects/{}/promote", d.project);
+    let reply = json_call(
+        &d.h.app,
+        "POST",
+        &promote,
+        Some(&d.cookie),
+        Some(json!({ "table_id": orders, "title": "Units sold",
+                     "measure": { "column": "quantity", "agg": "sum" } })),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    assert_eq!(reply.body["formula"], "SUM(order.quantity)");
+    let m = json_call(&d.h.app, "GET", &path, Some(&d.cookie), None)
+        .await
+        .body;
+    let units = named(&m["metrics"], "Units sold");
+    assert_eq!(units["standing"], "unapproved");
+    assert_eq!(units["grain"], "order");
+    assert_eq!(units["problem"], Value::Null);
+
+    // Counting rows, and distinct values.
+    for (measure, formula) in [
+        (json!({ "agg": "count" }), "COUNT(order)"),
+        (
+            json!({ "column": "customer_id", "agg": "approx_count_distinct" }),
+            "COUNT DISTINCT(order.customer_id)",
+        ),
+    ] {
+        let title = format!("Promoted {formula}");
+        let reply = json_call(
+            &d.h.app,
+            "POST",
+            &promote,
+            Some(&d.cookie),
+            Some(json!({ "table_id": orders, "title": title, "measure": measure })),
+        )
+        .await;
+        assert_eq!(reply.body["formula"], formula);
+    }
+    // A name that's taken is refused, as for any note.
+    let again = json_call(
+        &d.h.app,
+        "POST",
+        &promote,
+        Some(&d.cookie),
+        Some(json!({ "table_id": orders, "title": "Units sold",
+                     "measure": { "column": "quantity", "agg": "sum" } })),
+    )
+    .await;
+    assert_eq!(again.status, StatusCode::CONFLICT);
+}

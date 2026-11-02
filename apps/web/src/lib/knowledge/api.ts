@@ -10,6 +10,8 @@ import type {
   NoteDetail,
   NoteEdit,
   ProjectModelResponse,
+  PromoteRequest,
+  PromoteResponse,
   QueueResponse,
   SuggestionsResponse,
   WorkspaceMembersResponse,
@@ -130,6 +132,21 @@ function changed(client: QueryClient, note: NoteDetail | null, id: string) {
   void client.invalidateQueries({ queryKey: ["knowledge", "cases"] });
   void client.invalidateQueries({ queryKey: ["knowledge", "impact"] });
   void client.invalidateQueries({ queryKey: knowledgeKeys.suggestions });
+}
+
+/** Turns a raw aggregation into a draft metric. */
+export function usePromote(project: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (req: PromoteRequest) =>
+      api<PromoteResponse>(`/api/projects/${encodeURIComponent(project)}/promote`, {
+        method: "POST",
+        body: req,
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["knowledge"] });
+    },
+  });
 }
 
 /** Knowledge picked up from data profiles, in the projects the viewer can edit. */

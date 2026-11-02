@@ -1,4 +1,6 @@
-import type { Dimension, Measure, VisualKind, VisualSpec } from "@lattice/shared-types";
+import type { Dimension, Measure, Visual, VisualKind, VisualSpec } from "@lattice/shared-types";
+
+type Doc = { visuals: Visual[] };
 
 /** A field in the editor's field list: a governed metric, or one of the table's columns. */
 export type Field =
@@ -112,4 +114,35 @@ export function droppedField(data: DataTransfer): Field | null {
   } catch {
     return null;
   }
+}
+
+const sameMeasure = (a: Measure, b: Measure) =>
+  !a.metric && !b.metric && a.agg === b.agg && (a.column ?? null) === (b.column ?? null);
+
+/** How many visuals on the sheet aggregate a table's column this way. */
+export function sameAggregation(visuals: Visual[], tableId: string, m: Measure): number {
+  return visuals.filter(
+    (v) => v.spec.table_id === tableId && v.spec.measures.some((x) => sameMeasure(x, m)),
+  ).length;
+}
+
+/** The sheet with a raw aggregation replaced by the metric it was promoted to, wherever the
+ * visual can take it (a visual left with raw measures as well keeps them all). */
+export function switchToMetric<D extends Doc>(
+  doc: D,
+  tableId: string,
+  m: Measure,
+  noteId: string,
+): D {
+  return {
+    ...doc,
+    visuals: doc.visuals.map((v) => {
+      if (v.spec.table_id !== tableId || !v.spec.measures.some((x) => sameMeasure(x, m))) return v;
+      const measures = v.spec.measures.map((x) =>
+        sameMeasure(x, m) ? { column: null, agg: "sum" as const, metric: noteId } : x,
+      );
+      const mixed = measures.some((x) => x.metric) && measures.some((x) => !x.metric);
+      return mixed ? v : { ...v, spec: { ...v.spec, measures } };
+    }),
+  };
 }
