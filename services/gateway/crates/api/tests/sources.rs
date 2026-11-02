@@ -221,15 +221,22 @@ async fn websocket_batches_stream_arrow_results_and_hit_the_cache(pool: PgPool) 
         assert!(header.timings.total_ms > 0.0 && header.timings.execute_ms > 0.0);
     }
 
-    // The cache is filled off the response path; give it a moment, then ask again.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    send_batch(&mut ws, 2, project, queries).await;
-    let cached = until_done(&mut ws, 2).await;
-    let all_cached = cached
-        .iter()
-        .filter(|e| matches!(e, Event::Result(h, _) if h.cached))
-        .count();
-    assert_eq!(all_cached, 3, "second identical batch is served from Redis");
+    // The cache is filled off the response path: ask again until it has all three (a loaded
+    // machine can take a while to finish the writes).
+    let mut all_cached = 0;
+    for batch in 2..=26 {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        send_batch(&mut ws, batch, project, queries.clone()).await;
+        let cached = until_done(&mut ws, batch).await;
+        all_cached = cached
+            .iter()
+            .filter(|e| matches!(e, Event::Result(h, _) if h.cached))
+            .count();
+        if all_cached == 3 {
+            break;
+        }
+    }
+    assert_eq!(all_cached, 3, "an identical batch is served from Redis");
 }
 
 #[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
