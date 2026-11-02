@@ -272,6 +272,9 @@ test("sheet: switching to a prefetched sheet is under 100 ms", async ({ page }) 
 });
 
 test("scatter: pan and zoom over a million points stay at 60 fps", async ({ page }) => {
+  // On software WebGL (GPU-less CI runners) each of the 80+ pointer steps redraws a million
+  // points on the CPU: the measurement is reported rather than gated there, and needs time.
+  test.setTimeout(120_000);
   await trackLongTasks(page);
   await signInDemo(page);
   await openSheet(page, "Revenue Review");
