@@ -172,6 +172,84 @@ pub struct VisualStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub suffix: Option<String>,
+    /// Conditional formatting of tables, pivots and KPIs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<ColorRule>>", optional)]
+    pub rules: Vec<ColorRule>,
+    /// Lines across a chart's value axis.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<ReferenceLine>>", optional)]
+    pub reference_lines: Vec<ReferenceLine>,
+    /// A KPI's target, shown as progress towards it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub target: Option<f64>,
+}
+
+/// A conditional formatting rule on one measure (an index into the measures).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
+pub enum ColorRule {
+    /// Shades values from the lowest to the highest shown.
+    Scale {
+        measure: u32,
+        low: String,
+        high: String,
+    },
+    /// A bar behind each value, as long as its share of the largest.
+    Bars { measure: u32, color: String },
+    /// Colours values that meet a condition.
+    Threshold {
+        measure: u32,
+        op: CompareOp,
+        value: f64,
+        color: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum CompareOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Eq,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ReferenceLine {
+    pub kind: ReferenceKind,
+    /// The line's value, for a constant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub value: Option<f64>,
+    /// Which measure's series an average, minimum or maximum is of.
+    #[serde(default)]
+    pub measure: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ReferenceKind {
+    Constant,
+    Average,
+    Min,
+    Max,
+}
+
+fn is_color(c: &str) -> bool {
+    c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 impl VisualStyle {
@@ -187,12 +265,43 @@ impl VisualStyle {
             return Err("At most 24 series colours.".into());
         }
         for (name, color) in &self.colors {
-            let hex = color.len() == 7
-                && color.starts_with('#')
-                && color[1..].chars().all(|c| c.is_ascii_hexdigit());
-            if name.chars().count() > 120 || !hex {
+            if name.chars().count() > 120 || !is_color(color) {
                 return Err(format!("{color:?} isn't a colour like #4338ca."));
             }
+        }
+        if self.rules.len() > 10 {
+            return Err("At most 10 formatting rules.".into());
+        }
+        for rule in &self.rules {
+            let colors: Vec<&str> = match rule {
+                ColorRule::Scale { low, high, .. } => vec![low, high],
+                ColorRule::Bars { color, .. } => vec![color],
+                ColorRule::Threshold { color, value, .. } => {
+                    if !value.is_finite() {
+                        return Err("A rule compares with a number.".into());
+                    }
+                    vec![color]
+                }
+            };
+            if let Some(c) = colors.into_iter().find(|c| !is_color(c)) {
+                return Err(format!("{c:?} isn't a colour like #4338ca."));
+            }
+        }
+        if self.reference_lines.len() > 5 {
+            return Err("At most 5 reference lines.".into());
+        }
+        for line in &self.reference_lines {
+            let constant_ok =
+                line.kind != ReferenceKind::Constant || line.value.is_some_and(f64::is_finite);
+            if !constant_ok {
+                return Err("A constant line needs a value.".into());
+            }
+            if !short(&line.label, 40) || line.color.as_deref().is_some_and(|c| !is_color(c)) {
+                return Err("A reference line has a label of up to 40 characters and a colour like #4338ca.".into());
+            }
+        }
+        if self.target.is_some_and(|t| !t.is_finite()) {
+            return Err("A target is a number.".into());
         }
         if !short(&self.x_title, 80) || !short(&self.y_title, 80) {
             return Err("Axis titles have at most 80 characters.".into());
@@ -343,6 +452,43 @@ mod tests {
         bad(VisualStyle {
             decimals: Some(9),
             ..ok
+        });
+        let rules = VisualStyle {
+            rules: vec![ColorRule::Threshold {
+                measure: 0,
+                op: CompareOp::Lt,
+                value: 100.0,
+                color: "#b42318".into(),
+            }],
+            reference_lines: vec![ReferenceLine {
+                kind: ReferenceKind::Average,
+                value: None,
+                measure: 0,
+                label: Some("Average".into()),
+                color: None,
+            }],
+            target: Some(1e6),
+            ..VisualStyle::default()
+        };
+        assert_eq!(rules.check(), Ok(()));
+        let json = serde_json::to_value(&rules.rules).unwrap_or_default();
+        assert_eq!(json[0]["kind"], "threshold");
+        bad(VisualStyle {
+            reference_lines: vec![ReferenceLine {
+                kind: ReferenceKind::Constant,
+                value: None,
+                measure: 0,
+                label: None,
+                color: None,
+            }],
+            ..VisualStyle::default()
+        });
+        bad(VisualStyle {
+            rules: vec![ColorRule::Bars {
+                measure: 0,
+                color: "blue".into(),
+            }],
+            ..VisualStyle::default()
         });
         // A default style isn't stored at all.
         let json = serde_json::to_value(VisualOptions::default()).unwrap_or_default();

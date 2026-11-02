@@ -26,6 +26,7 @@ import {
   scalarOf,
   toNumber,
 } from "@/lib/sheets/values";
+import { paint, rangeOf } from "@/lib/sheets/rules";
 import { cn } from "@/lib/utils";
 
 import { useSheetEnv } from "../sheet-env";
@@ -41,15 +42,35 @@ export interface Interactions {
 
 export function KpiVisual({ visual, result }: { visual: Visual; result: VisualResult }) {
   const format = visual.spec.options.format ?? undefined;
-  const numbers = numberStyleOf(visual.spec.options.style);
+  const style = visual.spec.options.style;
+  const numbers = numberStyleOf(style);
+  const target = style?.target ?? null;
   const value = result.main ? toNumber(result.main.table.getChildAt(0)?.get(0)) : null;
   const previous = result.compare ? toNumber(result.compare.table.getChildAt(0)?.get(0)) : null;
   const delta = result.compare ? formatDelta(value, previous) : null;
   return (
     <div className="flex h-full flex-col justify-center gap-1.5">
-      <span className="text-[28px] leading-none font-bold tracking-tight" data-testid="kpi-value">
+      <span
+        className="text-[28px] leading-none font-bold tracking-tight"
+        data-testid="kpi-value"
+        style={paint(style?.rules ?? [], 0, value, [rangeOf([value])])}
+      >
         {formatValue(value, format, numbers)}
       </span>
+      {target !== null && value !== null && (
+        <div className="flex items-center gap-2" data-testid="kpi-target">
+          <span className="block h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+            <span
+              className="block h-full rounded-full bg-primary"
+              style={{ width: `${Math.max(0, Math.min(100, (value / target) * 100))}%` }}
+            />
+          </span>
+          <span className="text-xs whitespace-nowrap text-muted-foreground">
+            {target === 0 ? "—" : `${Math.round((value / target) * 100)}%`} of{" "}
+            {formatValue(target, format, numbers)}
+          </span>
+        </div>
+      )}
       {delta ? (
         <span
           className={cn(
@@ -222,10 +243,12 @@ export const ChartVisual = memo(function ChartVisual({
 export function PivotVisual({ visual, table }: { visual: Visual; table: Table }) {
   const { fiscalStart } = useSheetEnv();
   const numbers = numberStyleOf(visual.spec.options.style);
+  const rules = visual.spec.options.style?.rules ?? [];
   const fields = table.schema.fields;
   const rowsCol = columnOf(table, 0);
   const colsCol = columnOf(table, 1);
   const values = columnOf(table, 2).map(toNumber);
+  const range = rangeOf(values);
   const rowLabels = [
     ...new Set(rowsCol.map((v) => formatDimension(v, fields[0], visual.spec.x, fiscalStart))),
   ];
@@ -259,7 +282,11 @@ export function PivotVisual({ visual, table }: { visual: Visual; table: Table })
             <tr key={r} className="border-b border-border-subtle">
               <td className="px-2 py-1.5 font-medium whitespace-nowrap">{r}</td>
               {colLabels.map((c) => (
-                <td key={c} className="px-2 py-1.5 text-right font-mono tabular-nums">
+                <td
+                  key={c}
+                  className="px-2 py-1.5 text-right font-mono tabular-nums"
+                  style={paint(rules, 0, cells.get(`${r}\u0000${c}`) ?? null, [range])}
+                >
                   {formatValue(cells.get(`${r}\u0000${c}`) ?? null, format, numbers)}
                 </td>
               ))}

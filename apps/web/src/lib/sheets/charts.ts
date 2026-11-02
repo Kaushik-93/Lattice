@@ -310,7 +310,56 @@ export function shapedOption(
           },
       barMaxWidth: 48,
       emphasis: { focus: "series" },
+      markLine: referenceLines(style, i, spec.series ? 0 : i, horizontal, (v) =>
+        formatValue(v, format, numbers),
+      ),
     })),
+  };
+}
+
+const REFERENCE_NAME = { constant: "", average: "Average", min: "Minimum", max: "Maximum" };
+
+/** The style's reference lines that belong on series `index` (`measure` is the measure it
+ * shows; a split chart's series all show the first): a constant on the first series, an
+ * average, minimum or maximum on its measure's. */
+export function referenceLines(
+  style: VisualStyle,
+  index: number,
+  measure: number,
+  horizontal: boolean,
+  format: (v: number) => string,
+): Record<string, unknown> | undefined {
+  const lines = (style.reference_lines ?? []).filter((l) =>
+    l.kind === "constant" ? index === 0 : l.measure === measure && index === measure,
+  );
+  if (lines.length === 0) return undefined;
+  return {
+    symbol: "none",
+    silent: true,
+    animation: false,
+    data: lines.map((l) => {
+      const color = l.color ?? INK.secondary;
+      const label = {
+        show: true,
+        position: "insideEndTop",
+        color,
+        fontSize: 11,
+        formatter: (p: { value: number }) =>
+          `${l.label ?? REFERENCE_NAME[l.kind]}${l.label || l.kind === "constant" ? "" : ":"} ${
+            l.label && l.kind === "constant" ? "" : format(p.value)
+          }`.trim(),
+      };
+      const lineStyle = { color, type: "dashed", width: 1.5 };
+      if (l.kind === "constant") {
+        return { [horizontal ? "xAxis" : "yAxis"]: l.value ?? 0, label, lineStyle };
+      }
+      return {
+        type: l.kind,
+        valueDim: horizontal ? "x" : "y",
+        label,
+        lineStyle,
+      };
+    }),
   };
 }
 

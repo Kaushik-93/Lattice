@@ -3,7 +3,7 @@
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DataType, type Field, type Table } from "apache-arrow";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, type CSSProperties } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -44,6 +44,7 @@ export const ResultsGrid = memo(function ResultsGrid({
   onNearEnd,
   labels,
   format,
+  cellStyle,
 }: {
   table: Table;
   /** Overrides the default size (a grid inside a sheet card fills the card). */
@@ -54,6 +55,8 @@ export const ResultsGrid = memo(function ResultsGrid({
   labels?: string[];
   /** Formats a cell; null falls back to the default formatting. */
   format?: (value: unknown, column: number) => string | null;
+  /** Conditional formatting of a cell. */
+  cellStyle?: (value: unknown, column: number) => CSSProperties | undefined;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fields = table.schema.fields;
@@ -134,7 +137,7 @@ export const ResultsGrid = memo(function ResultsGrid({
                 transform: `translateY(${item.start}px)`,
               }}
             >
-              {row.getVisibleCells().map((cell) => {
+              {row.getVisibleCells().map((cell, column) => {
                 const numeric = (cell.column.columnDef.meta as { numeric: boolean }).numeric;
                 const text = flexRender(cell.column.columnDef.cell, cell.getContext());
                 return (
@@ -142,6 +145,7 @@ export const ResultsGrid = memo(function ResultsGrid({
                     key={cell.id}
                     role="gridcell"
                     className={`truncate px-3 leading-8 ${numeric ? "text-right font-mono tabular-nums" : ""}`}
+                    style={cellStyle?.(cell.getValue(), column)}
                   >
                     {text}
                   </div>

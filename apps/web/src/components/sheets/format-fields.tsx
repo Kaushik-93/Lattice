@@ -1,7 +1,17 @@
 "use client";
 
-import type { LegendPosition, Visual, VisualSpec, VisualStyle } from "@lattice/shared-types";
-import { useId, type ReactNode } from "react";
+import type {
+  ColorRule,
+  CompareOp,
+  LegendPosition,
+  ReferenceKind,
+  ReferenceLine,
+  Visual,
+  VisualSpec,
+  VisualStyle,
+} from "@lattice/shared-types";
+import { Plus, X } from "lucide-react";
+import { useId, useState, type ReactNode } from "react";
 
 import { OTHER, PALETTE, foldSlices, shape } from "@/lib/sheets/charts";
 import { useVisualResult } from "@/lib/sheets/results";
@@ -12,6 +22,8 @@ import { useSheetEnv } from "./sheet-env";
 const control =
   "h-9 w-full rounded-md border border-input bg-card px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const CARTESIAN = new Set(["line", "area", "bar", "column"]);
+const RULED = new Set(["table", "pivot", "kpi"]);
+const COLORS = { low: "#eef0ff", high: "#4338ca", bar: "#4338ca", alert: "#b42318" };
 const LEGENDS = new Set(["line", "area", "bar", "column", "pie", "donut"]);
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -51,9 +63,12 @@ function useSeriesNames(visual: Visual): string[] {
 /** The Format tab (ADR 0007): how a visual looks, never what it computes. */
 export function FormatFields({
   visual,
+  measureNames,
   onStyle,
 }: {
   visual: Visual;
+  /** What each measure is called (metrics by their title). */
+  measureNames: string[];
   /** Merges `patch` into the style; `merge` coalesces typing into one undo step. */
   onStyle: (label: string, patch: Partial<VisualStyle>, merge?: string) => void;
 }) {
@@ -187,6 +202,51 @@ export function FormatFields({
         </Section>
       )}
 
+      {RULED.has(spec.kind) && spec.measures.length > 0 && (
+        <Section title="Conditional formatting">
+          <RulesEditor
+            rules={style.rules ?? []}
+            measureNames={measureNames}
+            kpi={spec.kind === "kpi"}
+            onChange={(rules, label) => onStyle(label, { rules })}
+          />
+        </Section>
+      )}
+
+      {spec.kind === "kpi" && (
+        <Section title="Target">
+          <Labeled label="Target value">
+            {(id) => (
+              <input
+                id={id}
+                type="number"
+                step="any"
+                className={control}
+                placeholder="None"
+                value={style.target ?? ""}
+                onChange={(e) =>
+                  onStyle(
+                    "Change target",
+                    { target: e.target.value === "" ? undefined : Number(e.target.value) },
+                    `${visual.id}:target`,
+                  )
+                }
+              />
+            )}
+          </Labeled>
+        </Section>
+      )}
+
+      {CARTESIAN.has(spec.kind) && (
+        <Section title="Reference lines">
+          <LinesEditor
+            lines={style.reference_lines ?? []}
+            measureNames={spec.series ? measureNames.slice(0, 1) : measureNames}
+            onChange={(reference_lines, label) => onStyle(label, { reference_lines })}
+          />
+        </Section>
+      )}
+
       {names.length > 0 && (
         <Section title="Colours">
           <ul className="grid gap-1.5">
@@ -243,4 +303,305 @@ export function patchStyle(style: VisualStyle, patch: Partial<VisualStyle>): Vis
     if (empty) delete next[k];
   }
   return next as VisualStyle;
+}
+
+const RULE_LABEL: Record<ColorRule["kind"], string> = {
+  scale: "Colour scale",
+  bars: "Data bars",
+  threshold: "Highlight",
+};
+const OP_LABEL: Record<CompareOp, string> = {
+  gt: ">",
+  gte: "≥",
+  lt: "<",
+  lte: "≤",
+  eq: "=",
+};
+
+function describeRule(rule: ColorRule, names: string[]): string {
+  const of = names[rule.measure] ?? "the value";
+  if (rule.kind === "threshold") return `${of} ${OP_LABEL[rule.op]} ${rule.value}`;
+  return `${RULE_LABEL[rule.kind]} on ${of}`;
+}
+
+/** Conditional formatting rules: a list, and a form to add one. */
+function RulesEditor({
+  rules,
+  measureNames,
+  kpi,
+  onChange,
+}: {
+  rules: ColorRule[];
+  measureNames: string[];
+  kpi: boolean;
+  onChange: (rules: ColorRule[], label: string) => void;
+}) {
+  const kinds: ColorRule["kind"][] = kpi ? ["threshold"] : ["scale", "bars", "threshold"];
+  const [kind, setKind] = useState<ColorRule["kind"]>(kinds[0]!);
+  const [measure, setMeasure] = useState(0);
+  const [op, setOp] = useState<CompareOp>("lt");
+  const [value, setValue] = useState("");
+  const [color, setColor] = useState(COLORS.alert);
+  const [low, setLow] = useState(COLORS.low);
+  const [high, setHigh] = useState(COLORS.high);
+  const ready = kind !== "threshold" || (value.trim() !== "" && Number.isFinite(Number(value)));
+  const add = () => {
+    const rule: ColorRule =
+      kind === "scale"
+        ? { kind, measure, low, high }
+        : kind === "bars"
+          ? { kind, measure, color: color === COLORS.alert ? COLORS.bar : color }
+          : { kind, measure, op, value: Number(value), color };
+    onChange([...rules, rule], "Add formatting rule");
+    setValue("");
+  };
+  return (
+    <div className="grid gap-2">
+      {rules.map((r, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-2 rounded-md bg-secondary px-2 py-1 text-[13px]"
+        >
+          <span
+            aria-hidden
+            className="size-3 flex-none rounded-sm"
+            style={{
+              background:
+                r.kind === "scale" ? `linear-gradient(to right, ${r.low}, ${r.high})` : r.color,
+            }}
+          />
+          <span className="min-w-0 flex-1 truncate">{describeRule(r, measureNames)}</span>
+          <button
+            type="button"
+            aria-label={`Remove the rule ${describeRule(r, measureNames)}`}
+            onClick={() =>
+              onChange(
+                rules.filter((_, j) => j !== i),
+                "Remove formatting rule",
+              )
+            }
+            className="grid size-6 place-items-center rounded hover:bg-card"
+          >
+            <X className="size-3.5 text-subtle-foreground" />
+          </button>
+        </div>
+      ))}
+      {rules.length < 10 && (
+        <div className="grid gap-1.5 rounded-lg border border-border p-2">
+          <div className="grid grid-cols-2 gap-1.5">
+            <select
+              aria-label="Rule"
+              className={control}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as ColorRule["kind"])}
+            >
+              {kinds.map((k) => (
+                <option key={k} value={k}>
+                  {RULE_LABEL[k]}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Rule applies to"
+              className={control}
+              value={measure}
+              onChange={(e) => setMeasure(Number(e.target.value))}
+            >
+              {measureNames.map((name, i) => (
+                <option key={i} value={i}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {kind === "threshold" && (
+            <div className="grid grid-cols-[4rem_1fr_auto] gap-1.5">
+              <select
+                aria-label="Comparison"
+                className={control}
+                value={op}
+                onChange={(e) => setOp(e.target.value as CompareOp)}
+              >
+                {(Object.keys(OP_LABEL) as CompareOp[]).map((o) => (
+                  <option key={o} value={o}>
+                    {OP_LABEL[o]}
+                  </option>
+                ))}
+              </select>
+              <input
+                aria-label="Compared with"
+                type="number"
+                step="any"
+                className={control}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+              />
+              <input
+                type="color"
+                aria-label="Highlight colour"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="size-9 rounded border border-border bg-card p-0.5"
+              />
+            </div>
+          )}
+          {kind === "scale" && (
+            <div className="flex items-center gap-2 text-[13px]">
+              Low
+              <input
+                type="color"
+                aria-label="Low colour"
+                value={low}
+                onChange={(e) => setLow(e.target.value)}
+                className="size-7 rounded border border-border bg-card p-0.5"
+              />
+              High
+              <input
+                type="color"
+                aria-label="High colour"
+                value={high}
+                onChange={(e) => setHigh(e.target.value)}
+                className="size-7 rounded border border-border bg-card p-0.5"
+              />
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={add}
+            className="flex items-center gap-1 justify-self-start text-sm font-medium text-primary hover:underline disabled:opacity-40"
+          >
+            <Plus className="size-4" /> Add rule
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LINE_LABEL: Record<ReferenceKind, string> = {
+  constant: "Constant",
+  average: "Average",
+  min: "Minimum",
+  max: "Maximum",
+};
+
+/** Reference lines: a list, and a form to add one. */
+function LinesEditor({
+  lines,
+  measureNames,
+  onChange,
+}: {
+  lines: ReferenceLine[];
+  measureNames: string[];
+  onChange: (lines: ReferenceLine[], label: string) => void;
+}) {
+  const [kind, setKind] = useState<ReferenceKind>("average");
+  const [measure, setMeasure] = useState(0);
+  const [value, setValue] = useState("");
+  const [label, setLabel] = useState("");
+  const ready = kind !== "constant" || (value.trim() !== "" && Number.isFinite(Number(value)));
+  const describe = (l: ReferenceLine) =>
+    l.label ||
+    (l.kind === "constant"
+      ? `Line at ${l.value}`
+      : `${LINE_LABEL[l.kind]} of ${measureNames[l.measure] ?? "the value"}`);
+  return (
+    <div className="grid gap-2">
+      {lines.map((l, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-2 rounded-md bg-secondary px-2 py-1 text-[13px]"
+        >
+          <span className="min-w-0 flex-1 truncate">{describe(l)}</span>
+          <button
+            type="button"
+            aria-label={`Remove the line ${describe(l)}`}
+            onClick={() =>
+              onChange(
+                lines.filter((_, j) => j !== i),
+                "Remove reference line",
+              )
+            }
+            className="grid size-6 place-items-center rounded hover:bg-card"
+          >
+            <X className="size-3.5 text-subtle-foreground" />
+          </button>
+        </div>
+      ))}
+      {lines.length < 5 && (
+        <div className="grid gap-1.5 rounded-lg border border-border p-2">
+          <div className="grid grid-cols-2 gap-1.5">
+            <select
+              aria-label="Line"
+              className={control}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as ReferenceKind)}
+            >
+              {(Object.keys(LINE_LABEL) as ReferenceKind[]).map((k) => (
+                <option key={k} value={k}>
+                  {LINE_LABEL[k]}
+                </option>
+              ))}
+            </select>
+            {kind === "constant" ? (
+              <input
+                aria-label="Line value"
+                type="number"
+                step="any"
+                className={control}
+                value={value}
+                placeholder="Value"
+                onChange={(e) => setValue(e.target.value)}
+              />
+            ) : (
+              <select
+                aria-label="Line of"
+                className={control}
+                value={measure}
+                onChange={(e) => setMeasure(Number(e.target.value))}
+              >
+                {measureNames.map((name, i) => (
+                  <option key={i} value={i}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <input
+            aria-label="Line label"
+            className={control}
+            maxLength={40}
+            placeholder="Label (optional)"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => {
+              onChange(
+                [
+                  ...lines,
+                  {
+                    kind,
+                    measure,
+                    value: kind === "constant" ? Number(value) : undefined,
+                    label: label.trim() || undefined,
+                  },
+                ],
+                "Add reference line",
+              );
+              setValue("");
+              setLabel("");
+            }}
+            className="flex items-center gap-1 justify-self-start text-sm font-medium text-primary hover:underline disabled:opacity-40"
+          >
+            <Plus className="size-4" /> Add line
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -388,3 +388,63 @@ test("the Filters tab narrows one chart: its own filters and top N", async ({ pa
     await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
   }
 });
+
+test("conditional formatting, reference lines and KPI targets", async ({ page }) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  await page.getByRole("button", { name: "Edit mode" }).click();
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  const editor = page.getByRole("complementary", { name: "Editor" });
+  const newVisual = async (title: string, kind: string) => {
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    await editor.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await editor.getByLabel("Title").fill(title);
+    await editor.getByRole("button", { name: kind, exact: true }).click();
+  };
+  try {
+    // A KPI with a target and a highlight rule.
+    await newVisual("Quantity", "KPI");
+    await editor.getByRole("tab", { name: "Format" }).click();
+    await editor.getByLabel("Target value").fill("5000000");
+    const kpi = page.getByRole("region", { name: "Quantity", exact: true });
+    await expect(kpi.getByTestId("kpi-target")).toContainText("% of", { timeout: 15_000 });
+    await editor.getByLabel("Compared with").fill("1000000000");
+    await editor.getByRole("button", { name: "Add rule" }).click();
+    await expect(kpi.getByTestId("kpi-value")).toHaveCSS("color", "rgb(180, 35, 24)");
+
+    // A summary table with data bars.
+    await newVisual("By category", "Table");
+    await editor.getByRole("tab", { name: "Data" }).click();
+    await editor.getByLabel("Summarise (group and aggregate)").check();
+    await editor.getByRole("tab", { name: "Format" }).click();
+    await editor.getByLabel("Rule", { exact: true }).selectOption("bars");
+    await editor.getByRole("button", { name: "Add rule" }).click();
+    const cell = page
+      .getByRole("region", { name: "By category" })
+      .locator("[role=gridcell][style*='linear-gradient']")
+      .first();
+    await expect(cell).toBeVisible({ timeout: 15_000 });
+
+    // A column chart with an average line, kept after a reload.
+    await newVisual("With a line", "Column");
+    await editor.getByRole("tab", { name: "Format" }).click();
+    await editor.getByLabel("Line", { exact: true }).selectOption("average");
+    await editor.getByRole("button", { name: "Add line" }).click();
+    await expect(editor.getByText(/^Average of /)).toBeVisible();
+    await expect(page.getByTestId("save-state")).toHaveText("Saved", { timeout: 10_000 });
+    await page.reload();
+    await page.getByRole("region", { name: "With a line" }).click();
+    await page
+      .getByRole("complementary", { name: "Editor" })
+      .getByRole("tab", { name: "Format" })
+      .click();
+    await expect(
+      page.getByRole("complementary", { name: "Editor" }).getByText(/^Average of /),
+    ).toBeVisible();
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+  }
+});

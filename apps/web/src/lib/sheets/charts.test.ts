@@ -9,6 +9,7 @@ import {
   foldSlices,
   measureLabel,
   pieOption,
+  referenceLines,
   shape,
 } from "./charts";
 
@@ -152,5 +153,23 @@ describe("formatting a chart", () => {
     expect(o.series[0]!.label).toBeUndefined();
     expect(o.yAxis.type).toBe("value");
     expect(o.yAxis.splitLine.show).toBe(true);
+  });
+});
+
+describe("reference lines", () => {
+  const fmt = (v: number) => String(v);
+  it("puts a constant on the first series and statistics on their measure", () => {
+    const style = {
+      reference_lines: [
+        { kind: "constant" as const, value: 100, measure: 0, label: "Target" },
+        { kind: "average" as const, measure: 1 },
+      ],
+    };
+    const first = referenceLines(style, 0, 0, false, fmt) as { data: Record<string, unknown>[] };
+    expect(first.data).toHaveLength(1);
+    expect(first.data[0]).toMatchObject({ yAxis: 100 });
+    const second = referenceLines(style, 1, 1, true, fmt) as { data: Record<string, unknown>[] };
+    expect(second.data[0]).toMatchObject({ type: "average", valueDim: "x" });
+    expect(referenceLines({}, 0, 0, false, fmt)).toBeUndefined();
   });
 });

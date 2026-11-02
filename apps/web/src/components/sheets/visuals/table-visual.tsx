@@ -7,7 +7,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResultsGrid } from "@/components/explorer/results-grid";
 import type { QueryResult } from "@/lib/data/client";
 import { measureLabel } from "@/lib/sheets/charts";
-import { formatDimension, formatValue, numberStyleOf, toNumber } from "@/lib/sheets/values";
+import { paint, rangeOf } from "@/lib/sheets/rules";
+import {
+  formatDimension,
+  formatValue,
+  numberStyleOf,
+  numbersOf,
+  toNumber,
+} from "@/lib/sheets/values";
 
 import { useSheetEnv } from "../sheet-env";
 
@@ -84,6 +91,19 @@ export function TableVisual({
     [spec, table, fiscalStart],
   );
 
+  // Conditional formatting (ADR 0007), over the rows loaded so far.
+  const rules = useMemo(() => spec.options.style?.rules ?? [], [spec.options.style]);
+  const dimCount = [spec.x, spec.series].filter((d) => d !== undefined).length;
+  const ranges = useMemo(
+    () => spec.measures.map((_, i) => rangeOf(numbersOf(table, dimCount + i))),
+    [spec.measures, table, dimCount],
+  );
+  const styleCellAt = useCallback(
+    (value: unknown, column: number) =>
+      column < dimCount ? undefined : paint(rules, column - dimCount, toNumber(value), ranges),
+    [rules, dimCount, ranges],
+  );
+
   return (
     <div className="flex size-full min-h-0 flex-col">
       <ResultsGrid
@@ -92,6 +112,7 @@ export function TableVisual({
         onNearEnd={raw ? more : undefined}
         labels={labels}
         format={raw ? undefined : formatCellAt}
+        cellStyle={raw || rules.length === 0 ? undefined : styleCellAt}
       />
       {raw && (
         <p className="pt-1.5 text-right text-xs text-muted-foreground" aria-live="polite">

@@ -333,6 +333,9 @@ function VisualFields({
 
   const usesX = spec.kind !== "kpi" && !(spec.kind === "table" && !spec.x);
   const metrics = metricsFor(model, spec.table_id);
+  const measureNames = spec.measures.map((m) =>
+    m.metric ? (metrics.find((x) => x.note_id === m.metric)?.title ?? "Metric") : measureLabel(m),
+  );
   const place = (slot: Slot, field: FieldRef) =>
     update(`Add ${field.kind === "metric" ? field.title : field.name}`, (s) =>
       placeField(s, slot, field, (name) => {
@@ -689,6 +692,7 @@ function VisualFields({
           )}
           <FormatFields
             visual={visual}
+            measureNames={measureNames}
             onStyle={(label, patch, merge) =>
               update(
                 label,
@@ -707,11 +711,7 @@ function VisualFields({
           <FilterFields
             spec={spec}
             columns={columns}
-            measureNames={spec.measures.map((m) =>
-              m.metric
-                ? (metrics.find((x) => x.note_id === m.metric)?.title ?? "Metric")
-                : measureLabel(m),
-            )}
+            measureNames={measureNames}
             onChange={(label, patch) => update(label, patch)}
           />
           {spec.kind !== "kpi" && spec.kind !== "scatter" && spec.kind !== "slicer" && (
@@ -1178,6 +1178,8 @@ export function addVisual(
   store: ReturnType<typeof useSheetEnv>["store"],
   tables: CatalogTable[],
 ): void {
+  // A new visual needs its fields first.
+  lastTab = "data";
   const uses = new Map<string, number>();
   for (const v of store.getState().doc.visuals) {
     uses.set(v.spec.table_id, (uses.get(v.spec.table_id) ?? 0) + 1);
