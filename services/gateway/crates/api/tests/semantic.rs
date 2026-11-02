@@ -98,6 +98,7 @@ fn by_region(metrics: Vec<Uuid>) -> SemanticQuery {
         sort: vec![],
         limit: None,
         today: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+        top: None,
     }
 }
 
@@ -780,4 +781,86 @@ async fn comparisons_move_relative_dates_back(pool: PgPool) {
     // Customers active in the 90 days before 1 Nov, against those before 1 Aug.
     assert_eq!(values.len(), 2);
     assert!(values[0] > 0.0 && values[1] > 0.0, "{values:?}");
+}
+
+#[sqlx::test(migrator = "lattice_api::db::MIGRATOR")]
+async fn top_n_keeps_whole_categories(pool: PgPool) {
+    let d = demo(pool).await;
+    let model = lattice_api::semantic::load(&d.h.state, d.workspace, d.project)
+        .await
+        .unwrap()
+        .model;
+    let orders = model.entity("order").unwrap().table.clone().unwrap();
+    // The three categories with the most revenue, and the two with the least settled revenue.
+    let ranked = |measure: &str, dir: &str, n: u32| {
+        format!(
+            "SELECT string_agg(category, ',' ORDER BY category) AS v FROM (
+                 SELECT category FROM {} GROUP BY category ORDER BY {measure} {dir} LIMIT {n})",
+            orders.reference
+        )
+    };
+    let top3 = rows(
+        &d.h.state,
+        d.project,
+        &ranked("sum(amount)", "DESC", 3),
+        vec![],
+    )
+    .await;
+    let bottom2 = rows(
+        &d.h.state,
+        d.project,
+        &ranked("sum(amount) FILTER (WHERE status = 'settled')", "ASC", 2),
+        vec![],
+    )
+    .await;
+
+    // Raw: category split by region, top 3 categories by amount.
+    let schema = lattice_api::query::resolve(&d.h.state, d.project, orders.table_id)
+        .await
+        .unwrap()
+        .schema;
+    let raw: lattice_planner::TableQuery = serde_json::from_value(json!({
+        "table_id": orders.table_id,
+        "dimensions": [{ "column": "category" }, { "column": "region" }],
+        "measures": [{ "column": "amount", "agg": "sum" }],
+        "top": { "n": 3 }
+    }))
+    .unwrap();
+    let c = lattice_planner::compile(&raw, &schema).unwrap();
+    let kept = format!(
+        "SELECT string_agg(DISTINCT category, ',' ORDER BY category) AS v, count(*) AS n FROM ({})",
+        c.sql.trim_end()
+    );
+    let got = rows(&d.h.state, d.project, &kept, c.params).await;
+    let names = top3.trim_start_matches("{'v': ").trim_end_matches('}');
+    assert_eq!(
+        got,
+        format!("{{'v': {names}, 'n': 9}}"),
+        "3 categories × 3 regions"
+    );
+
+    // Governed: Net revenue by category, the bottom 2.
+    let mut q = by_region(vec![id_of(&model, "Net revenue")]);
+    q.dimensions[0].path.column = "category".into();
+    q.top = Some(lattice_planner::TopN {
+        n: 2,
+        bottom: true,
+        by: 0,
+    });
+    let c = compile(&model, &q).unwrap();
+    let kept = format!(
+        "SELECT string_agg(category, ',' ORDER BY category) AS v FROM ({})",
+        c.query.sql.trim_end()
+    );
+    let got = rows(&d.h.state, d.project, &kept, c.query.params).await;
+    assert_eq!(got, bottom2);
+
+    // Nonsense is refused.
+    let mut bad = raw.clone();
+    bad.top = Some(lattice_planner::TopN {
+        n: 3,
+        bottom: false,
+        by: 5,
+    });
+    assert!(lattice_planner::compile(&bad, &schema).is_err());
 }

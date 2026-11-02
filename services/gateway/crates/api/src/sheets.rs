@@ -152,6 +152,7 @@ mod tests {
                     filters: vec![],
                     sort: None,
                     limit: None,
+                    top: None,
                     options: VisualOptions::default(),
                 },
                 layout: Layout {

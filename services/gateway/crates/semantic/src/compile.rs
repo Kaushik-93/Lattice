@@ -14,7 +14,7 @@ use chrono::NaiveDate;
 use lattice_planner::sql::{TypeClass, ident as quote};
 use lattice_planner::{
     ColumnRole, CompiledQuery, DEFAULT_ROWS, FilterOp, FilterValue, MAX_ROWS, OutputColumn,
-    ParamValue, Scalar, SortDir, TimeBucket, bucket_name, dimension_parts,
+    ParamValue, Scalar, SortDir, TimeBucket, TopN, bucket_name, dimension_parts,
 };
 use uuid::Uuid;
 
@@ -58,6 +58,8 @@ pub struct SemanticQuery {
     pub sort: Vec<(String, SortDir)>,
     pub limit: Option<u32>,
     pub today: NaiveDate,
+    /// Keep the top (or bottom) values of the first dimension (ADR 0007).
+    pub top: Option<TopN>,
 }
 
 #[derive(Debug, Clone)]
@@ -876,6 +878,11 @@ pub fn compile(model: &Model, q: &SemanticQuery) -> Result<Compiled> {
         format!(" ORDER BY {}", order.join(", "))
     };
     let row_limit = q.limit.unwrap_or(DEFAULT_ROWS).clamp(1, MAX_ROWS);
+    let select = match &q.top {
+        Some(top) => lattice_planner::keep_top(&select, &columns, q.dimensions.len(), top)
+            .map_err(|e| SemanticError(e.to_string()))?,
+        None => select,
+    };
 
     let mut data_versions: Vec<(Uuid, i64)> = a
         .entities

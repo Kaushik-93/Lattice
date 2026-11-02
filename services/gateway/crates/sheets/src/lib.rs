@@ -251,6 +251,14 @@ pub fn validate(save: &SaveSheet) -> Result<(), SheetError> {
             return invalid("A visual title has at most 120 characters.".into());
         }
         v.spec.options.style.check().map_err(SheetError::Invalid)?;
+        if let Some(top) = v.spec.top
+            && !(1..=lattice_planner::MAX_TOP_N).contains(&top.n)
+        {
+            return invalid(format!(
+                "Top N keeps 1–{} values.",
+                lattice_planner::MAX_TOP_N
+            ));
+        }
     }
     for f in &save.filters {
         if f.label.trim().is_empty() || f.label.chars().count() > 60 {
@@ -705,6 +713,7 @@ mod tests {
                 filters: vec![],
                 sort: None,
                 limit: None,
+                top: None,
                 options: VisualOptions::default(),
             },
             layout: Layout { x, y: 0, w, h: 2 },

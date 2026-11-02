@@ -128,6 +128,7 @@ pub fn prepare(
         sort: Vec::new(),
         limit: q.limit,
         today,
+        top: q.top,
     };
     let fail = |e: lattice_semantic::SemanticError| invalid(e.0);
     let mut compiled = lattice_semantic::compile(model, &query).map_err(fail)?;

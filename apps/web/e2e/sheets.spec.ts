@@ -354,3 +354,37 @@ test("the Format tab styles a visual, and the style is saved", async ({ page }) 
     await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
   }
 });
+
+test("the Filters tab narrows one chart: its own filters and top N", async ({ page }) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  await page.getByRole("button", { name: "Edit mode" }).click();
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  try {
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    const editor = page.getByRole("complementary", { name: "Editor" });
+    await editor.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await editor.getByLabel("Title").fill("Narrowed");
+    await editor.getByRole("button", { name: "Bar", exact: true }).click();
+    await editor.getByLabel("Group by", { exact: true }).selectOption("category");
+    const bars = page.getByRole("region", { name: "Narrowed" }).getByRole("listitem");
+    await expect(bars).toHaveCount(8, { timeout: 15_000 });
+
+    await editor.getByRole("tab", { name: "Filters" }).click();
+    await editor.getByLabel(/Show only the top or bottom/).check();
+    await editor.getByLabel("How many").fill("3");
+    await expect(bars).toHaveCount(3, { timeout: 15_000 });
+
+    await editor.getByRole("button", { name: "Add a filter" }).click();
+    await editor.getByLabel("Filter column").selectOption("region");
+    await editor.getByLabel("Filter value").fill("EMEA");
+    await editor.getByRole("button", { name: "Add filter" }).click();
+    await expect(editor.getByRole("button", { name: "region is EMEA", exact: true })).toBeVisible();
+    await expect(bars).toHaveCount(3);
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+  }
+});

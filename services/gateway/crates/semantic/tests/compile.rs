@@ -179,6 +179,7 @@ fn query(metrics: &[u128], dims: Vec<SemDimension>) -> SemanticQuery {
         sort: vec![],
         limit: None,
         today: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+        top: None,
     }
 }
 

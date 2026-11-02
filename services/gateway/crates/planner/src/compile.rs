@@ -4,8 +4,8 @@ use ts_rs::TS;
 use crate::sql::{TypeClass, ident};
 use crate::{
     Aggregation, ColumnInfo, DEFAULT_ROWS, Dimension, Filter, FilterOp, FilterValue,
-    MAX_POINT_COLUMNS, MAX_POINTS, MAX_ROWS, Measure, PlanError, Scalar, SortDir, TableQuery,
-    TableSchema, TimeBucket,
+    MAX_POINT_COLUMNS, MAX_POINTS, MAX_ROWS, MAX_TOP_N, Measure, PlanError, Scalar, SortDir,
+    TableQuery, TableSchema, TimeBucket, TopN,
 };
 
 /// Bin widths outside this range are refused (they would be noise or overflow).
@@ -71,6 +71,11 @@ pub fn compile(query: &TableQuery, table: &TableSchema) -> Result<CompiledQuery,
         ctx.aggregate_select(&query.dimensions, &query.measures, &where_sql)?
     };
 
+    let select = match query.top {
+        Some(top) if !raw => keep_top(&select, &columns, query.dimensions.len(), &top)?,
+        Some(_) => return Err(PlanError::InvalidTop),
+        None => select,
+    };
     let order = order_by(query, &columns)?;
     let offset = match query.offset {
         Some(n) if n > 0 => format!(" OFFSET {n}"),
@@ -522,6 +527,34 @@ pub fn dimension_parts(
             }
         }
     }
+}
+
+/// Wraps a grouped select so only the top (or bottom) `n` values of its first column survive,
+/// ranked by the total of one measure column across the other dimensions. `dims` is how many of
+/// `columns` are dimensions; `top.by` counts measures after them.
+pub fn keep_top(
+    select: &str,
+    columns: &[OutputColumn],
+    dims: usize,
+    top: &TopN,
+) -> Result<String, PlanError> {
+    let (Some(dim), Some(measure)) = (
+        columns.first().filter(|_| dims > 0),
+        columns.get(dims + usize::try_from(top.by).unwrap_or(usize::MAX)),
+    ) else {
+        return Err(PlanError::InvalidTop);
+    };
+    if !(1..=MAX_TOP_N).contains(&top.n) {
+        return Err(PlanError::InvalidTop);
+    }
+    let (d, m) = (ident(&dim.name), ident(&measure.name));
+    let dir = if top.bottom { "ASC" } else { "DESC" };
+    Ok(format!(
+        "SELECT * EXCLUDE (\"__total\") FROM (SELECT *, sum({m}) OVER (PARTITION BY {d}) AS \"__total\" \
+         FROM ({select}) AS \"__grouped\") AS \"__ranked\" \
+         QUALIFY dense_rank() OVER (ORDER BY \"__total\" {dir} NULLS LAST, {d}) <= {n}",
+        n = top.n
+    ))
 }
 
 pub fn bucket_name(b: TimeBucket) -> &'static str {

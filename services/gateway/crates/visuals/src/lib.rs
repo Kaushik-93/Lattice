@@ -11,7 +11,7 @@ mod compile;
 
 pub use compile::{QueryPart, Shift, VisualError, VisualQuery, compile};
 
-use lattice_planner::{Dimension, Filter, Measure, Scalar, SortDir};
+use lattice_planner::{Dimension, Filter, Measure, Scalar, SortDir, TopN};
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -80,6 +80,10 @@ pub struct VisualSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub limit: Option<u32>,
+    /// Only the top (or bottom) N categories of `x` (ADR 0007).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub top: Option<TopN>,
     #[serde(default)]
     pub options: VisualOptions,
 }

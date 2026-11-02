@@ -10,7 +10,7 @@ pub mod sql;
 
 pub use compile::{
     ColumnRole, CompiledQuery, DimParts, OutputColumn, ParamValue, bucket_name, compile,
-    dimension_parts,
+    dimension_parts, keep_top,
 };
 
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,25 @@ pub struct TableQuery {
     pub limit: Option<u32>,
     #[serde(default)]
     pub offset: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub top: Option<TopN>,
 }
+
+/// Keep only the top (or bottom) `n` values of the first dimension, ranked by a measure's total
+/// across the other dimensions, so a split series keeps whole categories (ADR 0007).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TopN {
+    pub n: u32,
+    #[serde(default)]
+    pub bottom: bool,
+    /// Which measure ranks them (an index into the measures).
+    #[serde(default)]
+    pub by: u32,
+}
+
+pub const MAX_TOP_N: u32 = 1_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -213,4 +231,6 @@ pub enum PlanError {
     UnknownSort(String),
     #[error("metrics are computed through the business logic, not a single table")]
     NeedsModel,
+    #[error("top N needs a dimension, a measure to rank by and 1–{MAX_TOP_N} values")]
+    InvalidTop,
 }

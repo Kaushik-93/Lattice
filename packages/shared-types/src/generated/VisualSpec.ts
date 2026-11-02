@@ -2,6 +2,7 @@
 import type { Dimension } from "./Dimension";
 import type { Filter } from "./Filter";
 import type { Measure } from "./Measure";
+import type { TopN } from "./TopN";
 import type { VisualKind } from "./VisualKind";
 import type { VisualOptions } from "./VisualOptions";
 import type { VisualSort } from "./VisualSort";
@@ -26,4 +27,8 @@ export type VisualSpec = { kind: VisualKind, title: string, table_id: string, x?
  * Levels below `x` to drill into. Empty with a bucketed date `x` means the finer time
  * grains (year → quarter → month → day).
  */
-drill: Array<Dimension>, filters: Array<Filter>, sort?: VisualSort, limit?: number, options: VisualOptions, };
+drill: Array<Dimension>, filters: Array<Filter>, sort?: VisualSort, limit?: number, 
+/**
+ * Only the top (or bottom) N categories of `x` (ADR 0007).
+ */
+top?: TopN, options: VisualOptions, };

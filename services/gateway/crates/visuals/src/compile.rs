@@ -122,6 +122,7 @@ pub fn compile(
         sort: Vec::new(),
         limit: spec.limit,
         offset: None,
+        top: None,
     };
     // (default limit, default sort) per kind.
     let (limit, sort) = match spec.kind {
@@ -202,6 +203,9 @@ pub fn compile(
         VisualKind::Scatter => spec.limit.unwrap_or(limit).min(MAX_POINTS),
         _ => spec.limit.unwrap_or(limit),
     });
+    if !query.dimensions.is_empty() && !query.measures.is_empty() {
+        query.top = spec.top;
+    }
 
     let sort = spec
         .sort

@@ -192,6 +192,7 @@ async fn evaluate(
         sort: Vec::new(),
         limit: None,
         today,
+        top: None,
     };
     let compiled = semantic::compile(&model, &query).map_err(|e| e.0)?;
     scratch::scalar(

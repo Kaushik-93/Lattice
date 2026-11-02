@@ -3,6 +3,7 @@ import type { Dimension } from "./Dimension";
 import type { Filter } from "./Filter";
 import type { Measure } from "./Measure";
 import type { Sort } from "./Sort";
+import type { TopN } from "./TopN";
 
 /**
  * A query over one catalog table. With neither dimensions nor measures it returns raw rows
@@ -12,4 +13,4 @@ export type TableQuery = { table_id: string,
 /**
  * Raw-row queries only: the columns to return, in order (every column when empty).
  */
-columns?: Array<string>, dimensions: Array<Dimension>, measures: Array<Measure>, filters: Array<Filter>, sort: Array<Sort>, limit: number | null, offset: number | null, };
+columns?: Array<string>, dimensions: Array<Dimension>, measures: Array<Measure>, filters: Array<Filter>, sort: Array<Sort>, limit: number | null, offset: number | null, top?: TopN, };

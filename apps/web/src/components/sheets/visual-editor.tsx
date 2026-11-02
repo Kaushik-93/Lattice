@@ -20,6 +20,7 @@ import { useId, useState, type ReactNode } from "react";
 
 import { dataClient } from "@/lib/data/client";
 import { metricsFor, useProjectModel } from "@/lib/knowledge/api";
+import { measureLabel } from "@/lib/sheets/charts";
 import { placeField, type Field as FieldRef, type Slot } from "@/lib/sheets/fields";
 import { PRESET_LABEL, presetRange } from "@/lib/sheets/fiscal";
 import { useProjectTables, type CatalogTable } from "@/lib/queries";
@@ -27,6 +28,7 @@ import { newId, type SheetDoc } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
 
 import { DropSlot, FieldList, slotLabel } from "./field-list";
+import { FilterFields } from "./filter-fields";
 import { FormatFields, patchStyle } from "./format-fields";
 import { useSheetEnv, useSheetState } from "./sheet-env";
 
@@ -702,6 +704,16 @@ function VisualFields({
       )}
       {tab === "filters" && (
         <>
+          <FilterFields
+            spec={spec}
+            columns={columns}
+            measureNames={spec.measures.map((m) =>
+              m.metric
+                ? (metrics.find((x) => x.note_id === m.metric)?.title ?? "Metric")
+                : measureLabel(m),
+            )}
+            onChange={(label, patch) => update(label, patch)}
+          />
           {spec.kind !== "kpi" && spec.kind !== "scatter" && spec.kind !== "slicer" && (
             <div className="grid grid-cols-2 gap-2">
               <Field label="Sort">
