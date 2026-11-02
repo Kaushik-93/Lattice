@@ -2,7 +2,15 @@ import type { VisualSpec } from "@lattice/shared-types";
 import { tableFromArrays } from "apache-arrow";
 import { describe, expect, it } from "vitest";
 
-import { OTHER, PIE_SLICES, foldSlices, measureLabel, pieOption, shape } from "./charts";
+import {
+  OTHER,
+  PIE_SLICES,
+  cartesianOption,
+  foldSlices,
+  measureLabel,
+  pieOption,
+  shape,
+} from "./charts";
 
 const spec = (over: Partial<VisualSpec>): VisualSpec => ({
   kind: "column",
@@ -87,5 +95,62 @@ describe("shaping results for charts", () => {
     const metric = { column: null, agg: "sum" as const, metric: "n1" };
     expect(measureLabel(metric, "average_order_value")).toBe("Average order value");
     expect(measureLabel(metric)).toBe("Metric");
+  });
+});
+
+describe("formatting a chart", () => {
+  const two = tableFromArrays({
+    region: ["EMEA", "APAC"],
+    sum_amount: Float64Array.from([10, 20]),
+    count: Float64Array.from([1, 2]),
+  });
+
+  it("applies colours, labels, legend and axes from the style", () => {
+    const s = spec({
+      kind: "column",
+      x: { column: "region", bucket: null },
+      measures: [
+        { column: "amount", agg: "sum" },
+        { column: null, agg: "count" },
+      ],
+      options: {
+        stacked: false,
+        style: {
+          colors: { Count: "#ff0000" },
+          data_labels: true,
+          legend: "hidden",
+          y_title: "Revenue",
+          y_min: 0,
+          y_max: 50,
+          gridlines: false,
+          prefix: "~",
+        },
+      },
+    });
+    const o = cartesianOption(s, two, []) as {
+      series: { color: string; label?: { show: boolean } }[];
+      legend: { show?: boolean };
+      yAxis: { name?: string; min?: number; max?: number; splitLine: { show: boolean } };
+    };
+    expect(o.series.map((x) => x.color)).toEqual([expect.any(String), "#ff0000"]);
+    expect(o.series[0]!.color).not.toBe("#ff0000");
+    expect(o.series[0]!.label?.show).toBe(true);
+    expect(o.legend.show).toBe(false);
+    expect(o.yAxis).toMatchObject({ name: "Revenue", min: 0, max: 50, splitLine: { show: false } });
+  });
+
+  it("leaves a chart alone without a style", () => {
+    const s = spec({
+      kind: "column",
+      x: { column: "region", bucket: null },
+      measures: [{ column: "amount", agg: "sum" }],
+    });
+    const o = cartesianOption(s, two, []) as {
+      series: { label?: unknown }[];
+      yAxis: { type: string; splitLine: { show: boolean } };
+    };
+    expect(o.series[0]!.label).toBeUndefined();
+    expect(o.yAxis.type).toBe("value");
+    expect(o.yAxis.splitLine.show).toBe(true);
   });
 });

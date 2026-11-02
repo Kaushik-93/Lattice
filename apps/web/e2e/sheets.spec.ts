@@ -319,3 +319,38 @@ test("edit mode stays on across sheets; the drawer edits a visual by tab and by 
     await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
   }
 });
+
+test("the Format tab styles a visual, and the style is saved", async ({ page }) => {
+  await signInDemo(page);
+  await openSheets(page);
+  await settled(page);
+  await page.getByRole("button", { name: "Edit mode" }).click();
+  await page.getByRole("button", { name: "+ New sheet" }).click();
+  await expect(page.getByRole("heading", { name: /^Sheet \d+$/, level: 1 })).toBeVisible();
+  try {
+    await page.getByRole("button", { name: "Add visual" }).first().click();
+    const editor = page.getByRole("complementary", { name: "Editor" });
+    await editor.getByLabel("Table").selectOption({ label: "Acme Retail orders (demo) · orders" });
+    await editor.getByLabel("Title").fill("Styled");
+    await editor.getByRole("button", { name: "Bar", exact: true }).click();
+    await editor.getByLabel("Group by", { exact: true }).selectOption("region");
+
+    await editor.getByRole("tab", { name: "Format" }).click();
+    await editor.getByLabel("Decimals").selectOption("0");
+    await editor.getByLabel("Prefix").fill("~");
+    await editor.getByLabel(/^Colour of Sum of/).fill("#c2410c");
+    const visual = page.getByRole("region", { name: "Styled" });
+    await expect(visual.getByText(/^~[\d,.]+[KM]$/).first()).toBeVisible({ timeout: 15_000 });
+    const bar = visual.locator("li span[style*='background-color']").first();
+    await expect(bar).toHaveCSS("background-color", "rgb(194, 65, 12)");
+
+    await expect(page.getByTestId("save-state")).toHaveText("Saved", { timeout: 10_000 });
+    await page.reload();
+    await expect(page.getByRole("region", { name: "Styled" }).getByText(/^~/).first()).toBeVisible({
+      timeout: 15_000,
+    });
+  } finally {
+    await page.getByRole("button", { name: "Sheet actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete this sheet" }).click();
+  }
+});

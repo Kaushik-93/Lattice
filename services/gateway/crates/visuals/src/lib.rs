@@ -12,6 +12,8 @@ mod compile;
 pub use compile::{QueryPart, Shift, VisualError, VisualQuery, compile};
 
 use lattice_planner::{Dimension, Filter, Measure, Scalar, SortDir};
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
@@ -117,6 +119,110 @@ pub struct VisualOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub format: Option<ValueFormat>,
+    /// How the visual looks (ADR 0007).
+    #[serde(default, skip_serializing_if = "VisualStyle::is_default")]
+    #[ts(as = "Option<VisualStyle>", optional)]
+    pub style: VisualStyle,
+}
+
+/// Display-only formatting, applied by the browser (ADR 0007): never part of a query, so it
+/// changes neither results nor their cache keys.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct VisualStyle {
+    /// Colour per series, by the series' name as the legend shows it: `#rrggbb`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(as = "Option<BTreeMap<String, String>>", optional)]
+    pub colors: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub data_labels: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub legend: Option<LegendPosition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub x_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub y_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub y_min: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub y_max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub y_log: Option<bool>,
+    /// Shown unless set to false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub gridlines: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub decimals: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub suffix: Option<String>,
+}
+
+impl VisualStyle {
+    fn is_default(&self) -> bool {
+        *self == VisualStyle::default()
+    }
+
+    /// Whether a saved style is one the browser can render.
+    pub fn check(&self) -> Result<(), String> {
+        let short =
+            |s: &Option<String>, max: usize| s.as_ref().is_none_or(|s| s.chars().count() <= max);
+        if self.colors.len() > 24 {
+            return Err("At most 24 series colours.".into());
+        }
+        for (name, color) in &self.colors {
+            let hex = color.len() == 7
+                && color.starts_with('#')
+                && color[1..].chars().all(|c| c.is_ascii_hexdigit());
+            if name.chars().count() > 120 || !hex {
+                return Err(format!("{color:?} isn't a colour like #4338ca."));
+            }
+        }
+        if !short(&self.x_title, 80) || !short(&self.y_title, 80) {
+            return Err("Axis titles have at most 80 characters.".into());
+        }
+        if !short(&self.prefix, 8) || !short(&self.suffix, 8) {
+            return Err("A prefix or suffix has at most 8 characters.".into());
+        }
+        if self.decimals.is_some_and(|d| d > 6) {
+            return Err("At most 6 decimals.".into());
+        }
+        let finite = |v: Option<f64>| v.is_none_or(f64::is_finite);
+        if !finite(self.y_min) || !finite(self.y_max) {
+            return Err("Axis bounds are numbers.".into());
+        }
+        if let (Some(lo), Some(hi)) = (self.y_min, self.y_max)
+            && lo >= hi
+        {
+            return Err("The axis minimum is below its maximum.".into());
+        }
+        if self.y_log == Some(true) && self.y_min.is_some_and(|v| v <= 0.0) {
+            return Err("A log scale starts above zero.".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum LegendPosition {
+    Top,
+    Bottom,
+    Right,
+    Hidden,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -195,4 +301,47 @@ pub struct VisualRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub offset: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn styles_are_checked() {
+        let ok = VisualStyle {
+            colors: BTreeMap::from([("EMEA".into(), "#4338ca".into())]),
+            y_min: Some(0.0),
+            y_max: Some(100.0),
+            decimals: Some(2),
+            prefix: Some("€".into()),
+            ..VisualStyle::default()
+        };
+        assert_eq!(ok.check(), Ok(()));
+        let bad = |s: VisualStyle| assert!(s.check().is_err(), "{s:?}");
+        bad(VisualStyle {
+            colors: BTreeMap::from([("EMEA".into(), "red".into())]),
+            ..ok.clone()
+        });
+        bad(VisualStyle {
+            y_min: Some(5.0),
+            y_max: Some(5.0),
+            ..ok.clone()
+        });
+        bad(VisualStyle {
+            y_log: Some(true),
+            ..ok.clone()
+        });
+        bad(VisualStyle {
+            suffix: Some("way too long".into()),
+            ..ok.clone()
+        });
+        bad(VisualStyle {
+            decimals: Some(9),
+            ..ok
+        });
+        // A default style isn't stored at all.
+        let json = serde_json::to_value(VisualOptions::default()).unwrap_or_default();
+        assert!(json.get("style").is_none());
+    }
 }

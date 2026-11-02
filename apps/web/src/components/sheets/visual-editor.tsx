@@ -27,6 +27,7 @@ import { newId, type SheetDoc } from "@/lib/sheets/store";
 import { cn } from "@/lib/utils";
 
 import { DropSlot, FieldList, slotLabel } from "./field-list";
+import { FormatFields, patchStyle } from "./format-fields";
 import { useSheetEnv, useSheetState } from "./sheet-env";
 
 export const KINDS: [VisualKind, string][] = [
@@ -684,6 +685,19 @@ function VisualFields({
               Stack series
             </label>
           )}
+          <FormatFields
+            visual={visual}
+            onStyle={(label, patch, merge) =>
+              update(
+                label,
+                (s) => ({
+                  ...s,
+                  options: { ...s.options, style: patchStyle(s.options.style ?? {}, patch) },
+                }),
+                merge,
+              )
+            }
+          />
         </>
       )}
       {tab === "filters" && (

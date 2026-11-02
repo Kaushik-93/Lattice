@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResultsGrid } from "@/components/explorer/results-grid";
 import type { QueryResult } from "@/lib/data/client";
 import { measureLabel } from "@/lib/sheets/charts";
-import { formatDimension, formatValue, toNumber } from "@/lib/sheets/values";
+import { formatDimension, formatValue, numberStyleOf, toNumber } from "@/lib/sheets/values";
 
 import { useSheetEnv } from "../sheet-env";
 
@@ -78,6 +78,7 @@ export function TableVisual({
         ? null
         : formatValue(n, counted ? "number" : (spec.options.format ?? undefined), {
             compact: false,
+            ...numberStyleOf(spec.options.style),
           });
     },
     [spec, table, fiscalStart],

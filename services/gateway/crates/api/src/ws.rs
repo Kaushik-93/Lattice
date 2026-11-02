@@ -77,7 +77,7 @@ enum Job {
     },
     Visual {
         id: Uuid,
-        spec: VisualSpec,
+        spec: Box<VisualSpec>,
         drill: Vec<Scalar>,
         offset: Option<u32>,
     },
@@ -192,7 +192,7 @@ async fn session(socket: WebSocket, state: AppState, principal: Option<Principal
                     .into_iter()
                     .map(|v| Job::Visual {
                         id: v.id,
-                        spec: v.spec,
+                        spec: Box::new(v.spec),
                         drill: v.drill,
                         offset: v.offset,
                     })
@@ -355,7 +355,7 @@ async fn shared_batch(
         };
         jobs.push(Job::Visual {
             id: v.id,
-            spec: saved.spec.clone(),
+            spec: Box::new(saved.spec.clone()),
             drill: v.drill,
             offset: v.offset,
         });

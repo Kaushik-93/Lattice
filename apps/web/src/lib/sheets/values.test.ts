@@ -12,6 +12,14 @@ describe("values", () => {
     expect(formatValue(null, "currency")).toBe("—");
   });
 
+  it("applies a visual's decimals, prefix and suffix", () => {
+    expect(formatValue(1234.5, "number", { compact: false, decimals: 0 })).toBe("1,235");
+    expect(formatValue(0.4567, "percent", { decimals: 2 })).toBe("45.67%");
+    expect(formatValue(12, "number", { prefix: "~", suffix: " units" })).toBe("~12 units");
+    expect(formatValue(26_600_000, "currency", { decimals: 2 })).toBe("$26.6M");
+    expect(formatValue(null, "number", { prefix: "~" })).toBe("—");
+  });
+
   it("describes change between periods", () => {
     expect(formatDelta(105.4, 100)).toEqual({ text: "+5.4%", tone: "up" });
     expect(formatDelta(98.8, 100)).toEqual({ text: "−1.2%", tone: "down" });

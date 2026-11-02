@@ -1,4 +1,10 @@
-import type { Dimension, Scalar, TimeBucket, ValueFormat } from "@lattice/shared-types";
+import type {
+  Dimension,
+  Scalar,
+  TimeBucket,
+  ValueFormat,
+  VisualStyle,
+} from "@lattice/shared-types";
 import { DataType, type Field, type Table } from "apache-arrow";
 
 import { fiscalQuarterLabel, fiscalYearLabel } from "./fiscal";
@@ -27,26 +33,48 @@ export function isTemporalField(field: Field | undefined): boolean {
 }
 
 /** "$11.7M", "48,210", "2.1%" — the design's KPI and axis style. */
+/** A visual's number formatting choices (ADR 0007). */
+export interface NumberStyle {
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+}
+
+export function numberStyleOf(style: VisualStyle | undefined): NumberStyle {
+  return {
+    decimals: style?.decimals ?? undefined,
+    prefix: style?.prefix ?? undefined,
+    suffix: style?.suffix ?? undefined,
+  };
+}
+
 export function formatValue(
   value: number | null,
   format: ValueFormat | undefined,
-  { compact = true }: { compact?: boolean } = {},
+  { compact = true, decimals, prefix = "", suffix = "" }: { compact?: boolean } & NumberStyle = {},
 ): string {
   if (value === null) return "—";
+  const wrap = (s: string) => `${prefix}${s}${suffix}`;
   if (format === "percent") {
-    return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(
-      value,
+    return wrap(
+      new Intl.NumberFormat("en-US", {
+        style: "percent",
+        maximumFractionDigits: decimals ?? 1,
+        minimumFractionDigits: decimals ?? 0,
+      }).format(value),
     );
   }
   const big = Math.abs(value) >= 10_000;
+  const short = compact && big;
   const options: Intl.NumberFormatOptions = {
-    notation: compact && big ? "compact" : "standard",
-    maximumFractionDigits: compact && big ? 1 : Math.abs(value) < 100 ? 2 : 0,
-    minimumFractionDigits:
-      format === "currency" && !(compact && big) && Math.abs(value) < 100 ? 2 : 0,
+    notation: short ? "compact" : "standard",
+    maximumFractionDigits: short ? (decimals ?? 1) : (decimals ?? (Math.abs(value) < 100 ? 2 : 0)),
+    minimumFractionDigits: short
+      ? 0
+      : (decimals ?? (format === "currency" && Math.abs(value) < 100 ? 2 : 0)),
   };
   if (format === "currency") Object.assign(options, { style: "currency", currency: "USD" });
-  return new Intl.NumberFormat("en-US", options).format(value);
+  return wrap(new Intl.NumberFormat("en-US", options).format(value));
 }
 
 /** "+5.4% vs Q2" style change between two values. */

@@ -250,6 +250,7 @@ pub fn validate(save: &SaveSheet) -> Result<(), SheetError> {
         if v.spec.title.chars().count() > 120 {
             return invalid("A visual title has at most 120 characters.".into());
         }
+        v.spec.options.style.check().map_err(SheetError::Invalid)?;
     }
     for f in &save.filters {
         if f.label.trim().is_empty() || f.label.chars().count() > 60 {

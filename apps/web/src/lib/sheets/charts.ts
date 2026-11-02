@@ -1,8 +1,21 @@
-import type { Measure, Scalar, VisualSpec } from "@lattice/shared-types";
+import type {
+  LegendPosition,
+  Measure,
+  Scalar,
+  VisualSpec,
+  VisualStyle,
+} from "@lattice/shared-types";
 import type { Field, Table } from "apache-arrow";
 import type { EChartsOption } from "echarts";
 
-import { columnOf, formatDimension, formatValue, numbersOf, scalarOf } from "@/lib/sheets/values";
+import {
+  columnOf,
+  formatDimension,
+  formatValue,
+  numberStyleOf,
+  numbersOf,
+  scalarOf,
+} from "@/lib/sheets/values";
 
 /**
  * Categorical slots in fixed order (never cycled): the design's indigo and orange, then
@@ -133,17 +146,40 @@ const baseTooltip = {
   extraCssText: "box-shadow: 0 4px 12px rgba(16,24,40,.08); border-radius: 8px;",
 };
 
-function legend(count: number): EChartsOption["legend"] {
-  return count >= 2
-    ? {
-        top: 0,
-        right: 0,
-        icon: "roundRect",
-        itemWidth: 12,
-        itemHeight: 3,
-        textStyle: { color: INK.secondary, fontSize: 12 },
-      }
-    : { show: false };
+function legend(count: number, position?: LegendPosition | null): EChartsOption["legend"] {
+  if (count < 2 || position === "hidden") return { show: false };
+  const look = {
+    icon: "roundRect",
+    itemWidth: 12,
+    itemHeight: 3,
+    textStyle: { color: INK.secondary, fontSize: 12 },
+  };
+  if (position === "bottom") return { ...look, bottom: 0, left: "center" };
+  if (position === "right") return { ...look, right: 0, top: "middle", orient: "vertical" };
+  return { ...look, top: 0, right: 0 };
+}
+
+/** Space the plot leaves for a legend and axis titles. */
+function gridFor(count: number, style: VisualStyle, horizontal: boolean) {
+  const shown = count >= 2 && style.legend !== "hidden";
+  const at = shown ? (style.legend ?? "top") : null;
+  const valueTitle = !!style.y_title;
+  const categoryTitle = !!style.x_title;
+  const [leftTitle, bottomTitle] = horizontal
+    ? [categoryTitle, valueTitle]
+    : [valueTitle, categoryTitle];
+  return {
+    left: leftTitle ? 28 : 4,
+    right: at === "right" ? 120 : 12,
+    top: at === "top" ? 28 : 12,
+    bottom: (at === "bottom" ? 28 : 4) + (bottomTitle ? 24 : 0),
+    containLabel: true,
+  };
+}
+
+/** A series' colour: the one picked for it in Format, else its slot in the palette. */
+function seriesColor(style: VisualStyle, name: string, i: number): string {
+  return style.colors?.[name] ?? colorOf(i);
 }
 
 function colorOf(i: number): string {
@@ -183,11 +219,23 @@ export function shapedOption(
 ): EChartsOption {
   const { keys, labels, series } = shaped;
   const format = spec.options.format ?? undefined;
+  const style = spec.options.style ?? {};
+  const numbers = numberStyleOf(style);
   const horizontal = spec.kind === "bar";
   const line = spec.kind === "line" || spec.kind === "area";
   const stacked = spec.options.stacked && series.length > 1;
   const dim = selected.length > 0;
+  const axisTitle = (name: string | null | undefined, gap: number) =>
+    name
+      ? {
+          name,
+          nameLocation: "middle" as const,
+          nameGap: gap,
+          nameTextStyle: { color: INK.secondary, fontSize: 12 },
+        }
+      : {};
   const categoryAxis = {
+    ...axisTitle(style.x_title, horizontal ? 48 : 28),
     type: "category" as const,
     data: labels,
     axisLine: { lineStyle: { color: INK.axis } },
@@ -196,26 +244,29 @@ export function shapedOption(
     boundaryGap: !line,
   };
   const valueAxis = {
-    type: "value" as const,
-    splitLine: { lineStyle: { color: INK.grid } },
+    ...axisTitle(style.y_title, horizontal ? 28 : 48),
+    type: style.y_log ? ("log" as const) : ("value" as const),
+    min: style.y_min ?? undefined,
+    max: style.y_max ?? undefined,
+    splitLine: { show: style.gridlines !== false, lineStyle: { color: INK.grid } },
     axisLabel: {
       color: INK.secondary,
       fontSize: 11,
       fontFamily: MONO,
-      formatter: (v: number) => formatValue(v, format),
+      formatter: (v: number) => formatValue(v, format, numbers),
     },
   };
   return {
     animationDuration: 250,
     animationDurationUpdate: 200,
-    grid: { left: 4, right: 12, top: series.length >= 2 ? 28 : 12, bottom: 4, containLabel: true },
-    legend: legend(series.length),
+    grid: gridFor(series.length, style, horizontal),
+    legend: legend(series.length, style.legend),
     tooltip: {
       ...baseTooltip,
       trigger: "axis",
       axisPointer: { type: line ? "line" : "shadow", lineStyle: { color: INK.axis } },
       valueFormatter: (v) =>
-        formatValue(typeof v === "number" ? v : null, format, { compact: false }),
+        formatValue(typeof v === "number" ? v : null, format, { compact: false, ...numbers }),
     },
     // Wheel/pinch zoom and brush-to-zoom along the category axis.
     dataZoom:
@@ -233,8 +284,19 @@ export function shapedOption(
         itemStyle:
           dim && !line && !keyMatches(keys[j], selected, field) ? { opacity: 0.3 } : undefined,
       })),
-      color: colorOf(i),
-      showSymbol: false,
+      color: seriesColor(style, s.name, i),
+      label: style.data_labels
+        ? {
+            show: true,
+            position: stacked ? "inside" : horizontal ? "right" : "top",
+            color: stacked ? "#ffffff" : INK.secondary,
+            fontSize: 11,
+            formatter: (p: { value: unknown }) =>
+              formatValue(typeof p.value === "number" ? p.value : null, format, numbers),
+          }
+        : undefined,
+      showSymbol: !!style.data_labels && line,
+      symbol: "circle",
       symbolSize: 8,
       lineStyle: line ? { width: 2 } : undefined,
       areaStyle: spec.kind === "area" ? { opacity: series.length > 1 ? 0.12 : 0.1 } : undefined,
@@ -279,15 +341,17 @@ export function pieOption(
   const { keys, labels, series } = foldSlices(shape(spec, table, fiscalStart));
   const values = series[0]?.values ?? [];
   const format = spec.options.format ?? undefined;
+  const style = spec.options.style ?? {};
+  const numbers = numberStyleOf(style);
   const dim = selected.length > 0;
   return {
     animationDuration: 250,
-    legend: { ...legend(2), orient: "vertical", top: "middle", right: 0 },
+    legend: legend(2, style.legend ?? "right"),
     tooltip: {
       ...baseTooltip,
       trigger: "item",
       valueFormatter: (v) =>
-        formatValue(typeof v === "number" ? v : null, format, { compact: false }),
+        formatValue(typeof v === "number" ? v : null, format, { compact: false, ...numbers }),
     },
     series: [
       {
@@ -296,12 +360,20 @@ export function pieOption(
         center: ["38%", "50%"],
         padAngle: 1,
         itemStyle: { borderRadius: 4, borderColor: "#ffffff", borderWidth: 2 },
-        label: { show: false },
+        label: style.data_labels
+          ? {
+              show: true,
+              color: INK.secondary,
+              fontSize: 11,
+              formatter: (p: { name: string; value: unknown }) =>
+                `${p.name}: ${formatValue(typeof p.value === "number" ? p.value : null, format, numbers)}`,
+            }
+          : { show: false },
         data: labels.map((name, i) => ({
           name,
           value: values[i] ?? 0,
           itemStyle: {
-            color: keys[i] === undefined ? OTHER : colorOf(i),
+            color: keys[i] === undefined ? OTHER : seriesColor(style, name, i),
             opacity: dim && !keyMatches(keys[i], selected, table.schema.fields[0]) ? 0.3 : 1,
           },
         })),

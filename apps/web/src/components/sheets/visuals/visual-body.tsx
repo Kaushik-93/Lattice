@@ -22,6 +22,7 @@ import {
   formatDelta,
   formatDimension,
   formatValue,
+  numberStyleOf,
   scalarOf,
   toNumber,
 } from "@/lib/sheets/values";
@@ -40,13 +41,14 @@ export interface Interactions {
 
 export function KpiVisual({ visual, result }: { visual: Visual; result: VisualResult }) {
   const format = visual.spec.options.format ?? undefined;
+  const numbers = numberStyleOf(visual.spec.options.style);
   const value = result.main ? toNumber(result.main.table.getChildAt(0)?.get(0)) : null;
   const previous = result.compare ? toNumber(result.compare.table.getChildAt(0)?.get(0)) : null;
   const delta = result.compare ? formatDelta(value, previous) : null;
   return (
     <div className="flex h-full flex-col justify-center gap-1.5">
       <span className="text-[28px] leading-none font-bold tracking-tight" data-testid="kpi-value">
-        {formatValue(value, format)}
+        {formatValue(value, format, numbers)}
       </span>
       {delta ? (
         <span
@@ -86,6 +88,9 @@ export function BarList({
     () => shape(visual.spec, table, fiscalStart),
     [visual.spec, table, fiscalStart],
   );
+  const style = visual.spec.options.style;
+  const numbers = numberStyleOf(style);
+  const color = series[0] ? style?.colors?.[series[0].name] : undefined;
   const values = series[0]?.values ?? [];
   const max = Math.max(1e-9, ...values.map((v) => v ?? 0));
   const field = table.schema.fields[0];
@@ -111,13 +116,19 @@ export function BarList({
               <span className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
                 <span className="truncate font-medium">{label}</span>
                 <span className="font-mono text-[13px] text-secondary-foreground tabular-nums">
-                  {formatValue(values[i] ?? null, format)}
+                  {formatValue(values[i] ?? null, format, numbers)}
                 </span>
               </span>
               <span className="block h-2.5 overflow-hidden rounded-full bg-secondary">
                 <span
-                  className="block h-full rounded-full bg-primary transition-[width] group-hover:bg-primary-hover"
-                  style={{ width: `${Math.max(0, ((values[i] ?? 0) / max) * 100)}%` }}
+                  className={cn(
+                    "block h-full rounded-full transition-[width]",
+                    !color && "bg-primary group-hover:bg-primary-hover",
+                  )}
+                  style={{
+                    width: `${Math.max(0, ((values[i] ?? 0) / max) * 100)}%`,
+                    backgroundColor: color,
+                  }}
                 />
               </span>
             </button>
@@ -210,6 +221,7 @@ export const ChartVisual = memo(function ChartVisual({
 /** Rows × columns of a two-dimension result, summed into a matrix with totals. */
 export function PivotVisual({ visual, table }: { visual: Visual; table: Table }) {
   const { fiscalStart } = useSheetEnv();
+  const numbers = numberStyleOf(visual.spec.options.style);
   const fields = table.schema.fields;
   const rowsCol = columnOf(table, 0);
   const colsCol = columnOf(table, 1);
@@ -248,13 +260,14 @@ export function PivotVisual({ visual, table }: { visual: Visual; table: Table })
               <td className="px-2 py-1.5 font-medium whitespace-nowrap">{r}</td>
               {colLabels.map((c) => (
                 <td key={c} className="px-2 py-1.5 text-right font-mono tabular-nums">
-                  {formatValue(cells.get(`${r}\u0000${c}`) ?? null, format)}
+                  {formatValue(cells.get(`${r}\u0000${c}`) ?? null, format, numbers)}
                 </td>
               ))}
               <td className="px-2 py-1.5 text-right font-mono font-semibold tabular-nums">
                 {formatValue(
                   total((k) => k.startsWith(`${r}\u0000`)),
                   format,
+                  numbers,
                 )}
               </td>
             </tr>
